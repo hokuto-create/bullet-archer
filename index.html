@@ -1,0 +1,835 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>BULLET ARCHER 〜弾幕の射手〜</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body {
+    width: 100%; height: 100%;
+    overflow: hidden;
+    background: #0a0a14;
+    touch-action: none;
+    -webkit-user-select: none; user-select: none;
+    -webkit-touch-callout: none;
+    font-family: 'Helvetica Neue', Arial, sans-serif;
+    color: #fff;
+  }
+  #game-canvas { display: block; width: 100%; height: 100%; }
+
+  /* ---- HUD ---- */
+  #hud {
+    position: fixed; top: 0; left: 0; right: 0;
+    padding: calc(10px + env(safe-area-inset-top)) 16px 0;
+    pointer-events: none; display: none;
+  }
+  #hp-bar-outer {
+    width: min(46vw, 260px); height: 14px;
+    background: rgba(255,255,255,0.15);
+    border: 1px solid rgba(255,255,255,0.4);
+    border-radius: 7px; overflow: hidden;
+  }
+  #hp-bar-inner {
+    width: 100%; height: 100%;
+    background: linear-gradient(90deg, #3f6, #6f9);
+    transition: width 0.15s;
+  }
+  #hud-row { display: flex; justify-content: space-between; align-items: flex-start; }
+  #hud-right { text-align: right; text-shadow: 0 1px 3px #000; }
+  #wave-label { font-size: 18px; font-weight: bold; color: #ffd76a; }
+  #score-label { font-size: 14px; color: #ccc; }
+  #hp-label { font-size: 11px; color: #cfc; margin-top: 2px; text-shadow: 0 1px 2px #000; }
+  #wave-banner {
+    position: fixed; top: 30%; left: 0; right: 0;
+    text-align: center; font-size: 34px; font-weight: bold;
+    color: #ffd76a; text-shadow: 0 2px 12px rgba(255,180,0,0.6);
+    pointer-events: none; opacity: 0; transition: opacity 0.4s;
+  }
+
+  /* ---- 仮想ジョイスティック ---- */
+  #joystick {
+    position: fixed; display: none; pointer-events: none; z-index: 5;
+  }
+  #joy-base {
+    position: absolute; width: 110px; height: 110px; margin: -55px 0 0 -55px;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.08);
+    border: 2px solid rgba(255,255,255,0.3);
+  }
+  #joy-knob {
+    position: absolute; width: 48px; height: 48px; margin: -24px 0 0 -24px;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.45);
+  }
+
+  /* ---- タイトル / ゲームオーバー画面 ---- */
+  .screen {
+    position: fixed; inset: 0; z-index: 10;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    background: radial-gradient(ellipse at center, rgba(20,24,48,0.92), rgba(5,6,12,0.97));
+    text-align: center;
+    padding: env(safe-area-inset-top) 20px env(safe-area-inset-bottom);
+  }
+  #title-main {
+    font-size: clamp(38px, 10vw, 72px);
+    font-weight: 900; letter-spacing: 0.06em;
+    color: #ffd76a;
+    text-shadow: 0 0 24px rgba(255,150,0,0.55), 0 3px 0 #7a4a00;
+  }
+  #title-sub {
+    font-size: clamp(16px, 4vw, 26px);
+    color: #9fc4ff; letter-spacing: 0.3em;
+    margin: 10px 0 40px;
+  }
+  .screen p.desc { color: #aab; font-size: 14px; line-height: 1.9; margin-bottom: 34px; }
+  .btn {
+    font-size: 20px; font-weight: bold;
+    color: #10142a; background: linear-gradient(180deg, #ffd76a, #f0a830);
+    border: none; border-radius: 999px;
+    padding: 14px 58px; cursor: pointer;
+    box-shadow: 0 4px 18px rgba(255,170,0,0.4);
+  }
+  .btn:active { transform: scale(0.96); }
+  #gameover-screen { display: none; }
+  #go-title { font-size: clamp(30px, 8vw, 54px); font-weight: 900; color: #ff5566; margin-bottom: 18px;
+              text-shadow: 0 0 20px rgba(255,60,80,0.5); }
+  #go-stats { font-size: 18px; color: #dde; line-height: 2; margin-bottom: 36px; }
+</style>
+</head>
+<body>
+<canvas id="game-canvas"></canvas>
+
+<div id="hud">
+  <div id="hud-row">
+    <div>
+      <div id="hp-bar-outer"><div id="hp-bar-inner"></div></div>
+      <div id="hp-label">HP 100 / 100</div>
+    </div>
+    <div id="hud-right">
+      <div id="wave-label">WAVE 1</div>
+      <div id="score-label">SCORE 0</div>
+    </div>
+  </div>
+</div>
+<div id="wave-banner"></div>
+
+<div id="joystick">
+  <div id="joy-base"></div>
+  <div id="joy-knob"></div>
+</div>
+
+<div id="title-screen" class="screen">
+  <div id="title-main">BULLET ARCHER</div>
+  <div id="title-sub">〜弾幕の射手〜</div>
+  <p class="desc">
+    移動: WASD / 矢印キー / 仮想ジョイスティック<br>
+    立ち止まると最寄りの敵を自動攻撃!<br>
+    弾幕をかわしてウェーブを生き延びろ
+  </p>
+  <button id="start-btn" class="btn">START</button>
+</div>
+
+<div id="gameover-screen" class="screen">
+  <div id="go-title">GAME OVER</div>
+  <div id="go-stats"></div>
+  <button id="retry-btn" class="btn">RETRY</button>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+'use strict';
+
+// =====================================================================
+// 定数
+// =====================================================================
+const CONFIG = {
+  arena: { half: 22 },              // アリーナ半径(移動可能範囲 ±half)
+  player: {
+    speed: 8.5,
+    maxHp: 100,
+    radius: 0.6,
+    fireInterval: 0.38,             // オート攻撃間隔(秒)
+    arrowSpeed: 26,
+    arrowDamage: 12,
+    hitInvincible: 0.5,             // 被弾後の無敵時間(秒)
+  },
+  wave: {
+    baseCount: 4,                   // ウェーブ1の敵数
+    countPerWave: 1,                // ウェーブごとの追加数
+    bossEvery: 5,                   // 5ウェーブごとにボス
+    clearHeal: 15,                  // ウェーブクリア時の回復量
+    spawnMinDist: 10,               // プレイヤーからの最小スポーン距離
+  },
+  camera: {
+    offset: { x: 0, y: 18, z: 12 }, // プレイヤーからの相対位置
+    lerp: 4.0,                      // 追従の滑らかさ
+  },
+  pool: { arrows: 40, bullets: 300 },
+};
+
+// =====================================================================
+// 敵定義(データ駆動: 種類を増やすときはここに追加する)
+// =====================================================================
+// behavior:
+//   'chase'  … プレイヤーに突進、接触ダメージ
+//   'shoot'  … 一定距離を保ちつつ attack で射撃
+//   'boss'   … 低速追尾 + telegraph(赤リング予兆)付き attack
+const ENEMY_TYPES = {
+  chaser: {
+    behavior: 'chase',
+    hp: 30, speed: 4.2, radius: 0.7,
+    color: 0xff5544, score: 100,
+    touchDamage: 10,
+  },
+  shooter: {
+    behavior: 'shoot',
+    hp: 24, speed: 3.2, radius: 0.7,
+    color: 0x44aaff, score: 150,
+    touchDamage: 8,
+    keepDistance: 11,               // この距離を保とうとする
+    attack: { pattern: 'aimed', interval: 2.2, speed: 9, damage: 8 },
+  },
+  boss: {
+    behavior: 'boss',
+    hp: 320, speed: 1.8, radius: 1.5,
+    color: 0xbb44ff, score: 1000,
+    touchDamage: 20,
+    hpPerWave: 60,                  // 出現ウェーブ数に応じたHP加算
+    attack: {
+      pattern: 'radial', interval: 3.2,
+      telegraph: 1.0,               // 赤リング予兆の時間(秒)
+      telegraphRadius: 6,
+      count: 28, speed: 7, damage: 12,
+    },
+  },
+};
+
+// =====================================================================
+// 弾幕パターン定義(データ駆動: パターンを増やすときはここに追加する)
+// 各関数は「発射する弾の方向ベクトル配列」を返す
+// =====================================================================
+const BULLET_PATTERNS = {
+  // プレイヤー狙い単発
+  aimed(enemy, playerPos) {
+    const d = new THREE.Vector3().subVectors(playerPos, enemy.mesh.position);
+    d.y = 0; d.normalize();
+    return [d];
+  },
+  // 全方位弾幕
+  radial(enemy) {
+    const dirs = [];
+    const n = enemy.def.attack.count;
+    const offset = Math.random() * Math.PI * 2;
+    for (let i = 0; i < n; i++) {
+      const a = offset + (i / n) * Math.PI * 2;
+      dirs.push(new THREE.Vector3(Math.cos(a), 0, Math.sin(a)));
+    }
+    return dirs;
+  },
+};
+
+// =====================================================================
+// シーン初期化
+// =====================================================================
+const canvas = document.getElementById('game-canvas');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setSize(window.innerWidth, window.innerHeight);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x0a0a14);
+scene.fog = new THREE.Fog(0x0a0a14, 40, 75);
+
+const camera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerHeight, 0.1, 200);
+
+scene.add(new THREE.AmbientLight(0x8888aa, 0.7));
+const dirLight = new THREE.DirectionalLight(0xffffff, 0.9);
+dirLight.position.set(10, 30, 10);
+scene.add(dirLight);
+
+// 床
+const floorSize = CONFIG.arena.half * 2 + 8;
+const floor = new THREE.Mesh(
+  new THREE.PlaneGeometry(floorSize, floorSize),
+  new THREE.MeshLambertMaterial({ color: 0x1a1f33 })
+);
+floor.rotation.x = -Math.PI / 2;
+scene.add(floor);
+const grid = new THREE.GridHelper(floorSize, 25, 0x334466, 0x232a44);
+grid.position.y = 0.01;
+scene.add(grid);
+
+// アリーナ境界の枠
+(function addWalls() {
+  const h = CONFIG.arena.half;
+  const mat = new THREE.MeshLambertMaterial({ color: 0x3355aa, emissive: 0x112244 });
+  const geoH = new THREE.BoxGeometry(h * 2 + 1, 1, 0.5);
+  const geoV = new THREE.BoxGeometry(0.5, 1, h * 2 + 1);
+  [[0, h + 0.25, geoH], [0, -h - 0.25, geoH]].forEach(([x, z, g]) => {
+    const m = new THREE.Mesh(g, mat); m.position.set(x, 0.5, z); scene.add(m);
+  });
+  [[h + 0.25, 0, geoV], [-h - 0.25, 0, geoV]].forEach(([x, z, g]) => {
+    const m = new THREE.Mesh(g, mat); m.position.set(x, 0.5, z); scene.add(m);
+  });
+})();
+
+window.addEventListener('resize', () => {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
+
+// =====================================================================
+// プレイヤー
+// =====================================================================
+const player = {
+  mesh: null, aimHelper: null,
+  hp: CONFIG.player.maxHp,
+  fireTimer: 0,
+  invincible: 0,
+  moving: false,
+};
+
+(function buildPlayer() {
+  const group = new THREE.Group();
+  const body = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.45, 0.55, 1.3, 10),
+    new THREE.MeshLambertMaterial({ color: 0x44dd88 })
+  );
+  body.position.y = 0.75;
+  group.add(body);
+  const head = new THREE.Mesh(
+    new THREE.SphereGeometry(0.35, 12, 10),
+    new THREE.MeshLambertMaterial({ color: 0xffe0b0 })
+  );
+  head.position.y = 1.65;
+  group.add(head);
+  // 弓(向きの目印)
+  const bow = new THREE.Mesh(
+    new THREE.TorusGeometry(0.45, 0.05, 6, 16, Math.PI),
+    new THREE.MeshLambertMaterial({ color: 0xcc8833 })
+  );
+  bow.position.set(0, 1.0, -0.6);
+  bow.rotation.set(0, 0, Math.PI / 2);
+  group.add(bow);
+  scene.add(group);
+  player.mesh = group;
+})();
+
+function resetPlayer() {
+  player.mesh.position.set(0, 0, 0);
+  player.hp = CONFIG.player.maxHp;
+  player.fireTimer = 0;
+  player.invincible = 0;
+}
+
+function damagePlayer(amount) {
+  if (player.invincible > 0 || state.phase !== 'playing') return;
+  player.hp -= amount;
+  player.invincible = CONFIG.player.hitInvincible;
+  updateHud();
+  if (player.hp <= 0) {
+    player.hp = 0;
+    gameOver();
+  }
+}
+
+// =====================================================================
+// 弾・プール
+// =====================================================================
+function makePool(size, buildMesh) {
+  const items = [];
+  for (let i = 0; i < size; i++) {
+    const mesh = buildMesh();
+    mesh.visible = false;
+    scene.add(mesh);
+    items.push({ mesh, active: false, vel: new THREE.Vector3(), damage: 0, life: 0 });
+  }
+  return items;
+}
+
+// プレイヤーの矢
+const arrowPool = makePool(CONFIG.pool.arrows, () => {
+  const m = new THREE.Mesh(
+    new THREE.ConeGeometry(0.12, 0.8, 6),
+    new THREE.MeshBasicMaterial({ color: 0xffee66 })
+  );
+  m.rotation.x = Math.PI / 2;
+  return m;
+});
+
+// 敵弾
+const bulletPool = makePool(CONFIG.pool.bullets, () =>
+  new THREE.Mesh(
+    new THREE.SphereGeometry(0.22, 8, 6),
+    new THREE.MeshBasicMaterial({ color: 0xff88aa })
+  )
+);
+
+function spawnFromPool(pool, pos, dir, speed, damage) {
+  for (const b of pool) {
+    if (b.active) continue;
+    b.active = true;
+    b.mesh.visible = true;
+    b.mesh.position.copy(pos);
+    b.vel.copy(dir).multiplyScalar(speed);
+    b.damage = damage;
+    b.life = 6;
+    if (pool === arrowPool) {
+      b.mesh.lookAt(pos.clone().add(dir));
+      b.mesh.rotateX(Math.PI / 2);
+    }
+    return b;
+  }
+  return null;
+}
+
+function deactivate(b) {
+  b.active = false;
+  b.mesh.visible = false;
+}
+
+function clearPool(pool) { pool.forEach(deactivate); }
+
+// =====================================================================
+// 敵
+// =====================================================================
+const enemies = [];
+
+// テレグラフ(赤リング予兆)用リング
+function makeTelegraphRing() {
+  const ring = new THREE.Mesh(
+    new THREE.RingGeometry(0.9, 1.0, 40),
+    new THREE.MeshBasicMaterial({ color: 0xff3333, transparent: true, opacity: 0.8, side: THREE.DoubleSide })
+  );
+  ring.rotation.x = -Math.PI / 2;
+  ring.position.y = 0.05;
+  ring.visible = false;
+  scene.add(ring);
+  return ring;
+}
+
+function buildEnemyMesh(def, isBoss) {
+  const group = new THREE.Group();
+  const geo = isBoss
+    ? new THREE.OctahedronGeometry(def.radius, 0)
+    : new THREE.BoxGeometry(def.radius * 1.5, def.radius * 1.8, def.radius * 1.5);
+  const body = new THREE.Mesh(geo, new THREE.MeshLambertMaterial({ color: def.color }));
+  body.position.y = isBoss ? def.radius + 0.4 : def.radius;
+  group.add(body);
+  group.userData.body = body;
+  return group;
+}
+
+function spawnEnemy(typeName, waveNum) {
+  const def = ENEMY_TYPES[typeName];
+  const isBoss = def.behavior === 'boss';
+  const mesh = buildEnemyMesh(def, isBoss);
+
+  // プレイヤーから十分離れたランダム位置にスポーン
+  const h = CONFIG.arena.half - 2;
+  let pos;
+  for (let tries = 0; tries < 20; tries++) {
+    pos = new THREE.Vector3((Math.random() * 2 - 1) * h, 0, (Math.random() * 2 - 1) * h);
+    if (pos.distanceTo(player.mesh.position) >= CONFIG.wave.spawnMinDist) break;
+  }
+  mesh.position.copy(pos);
+  scene.add(mesh);
+
+  const hp = def.hp + (isBoss ? (def.hpPerWave || 0) * (waveNum / CONFIG.wave.bossEvery - 1) : 0);
+  const enemy = {
+    type: typeName, def, mesh,
+    hp, maxHp: hp,
+    attackTimer: def.attack ? def.attack.interval * (0.5 + Math.random() * 0.5) : 0,
+    telegraphTimer: -1,             // >=0 の間は予兆中
+    telegraphRing: def.attack && def.attack.telegraph ? makeTelegraphRing() : null,
+    strafeDir: Math.random() < 0.5 ? 1 : -1,
+  };
+  enemies.push(enemy);
+  return enemy;
+}
+
+function removeEnemy(enemy) {
+  scene.remove(enemy.mesh);
+  if (enemy.telegraphRing) scene.remove(enemy.telegraphRing);
+  const i = enemies.indexOf(enemy);
+  if (i >= 0) enemies.splice(i, 1);
+}
+
+function damageEnemy(enemy, amount) {
+  enemy.hp -= amount;
+  const body = enemy.mesh.userData.body;
+  body.material.emissive = new THREE.Color(0x661111);
+  setTimeout(() => { body.material.emissive = new THREE.Color(0x000000); }, 80);
+  if (enemy.hp <= 0) {
+    state.score += enemy.def.score;
+    removeEnemy(enemy);
+    updateHud();
+    if (enemies.length === 0 && state.phase === 'playing') onWaveClear();
+  }
+}
+
+function fireEnemyAttack(enemy) {
+  const atk = enemy.def.attack;
+  const dirs = BULLET_PATTERNS[atk.pattern](enemy, player.mesh.position);
+  const origin = enemy.mesh.position.clone();
+  origin.y = 0.9;
+  for (const d of dirs) spawnFromPool(bulletPool, origin, d, atk.speed, atk.damage);
+}
+
+function updateEnemy(enemy, dt) {
+  const def = enemy.def;
+  const pos = enemy.mesh.position;
+  const toPlayer = new THREE.Vector3().subVectors(player.mesh.position, pos);
+  toPlayer.y = 0;
+  const dist = toPlayer.length();
+  if (dist > 0.001) toPlayer.normalize();
+
+  // --- 移動 ---
+  let moveVec = null;
+  if (def.behavior === 'chase') {
+    moveVec = toPlayer;
+  } else if (def.behavior === 'shoot') {
+    // 距離を保ちながら横に回り込む
+    if (dist > def.keepDistance + 1) moveVec = toPlayer.clone();
+    else if (dist < def.keepDistance - 1) moveVec = toPlayer.clone().negate();
+    else moveVec = new THREE.Vector3(-toPlayer.z, 0, toPlayer.x).multiplyScalar(enemy.strafeDir * 0.6);
+  } else if (def.behavior === 'boss') {
+    if (enemy.telegraphTimer < 0) moveVec = toPlayer; // 予兆中は停止
+  }
+  if (moveVec) {
+    pos.addScaledVector(moveVec, def.speed * dt);
+    const h = CONFIG.arena.half - def.radius;
+    pos.x = Math.max(-h, Math.min(h, pos.x));
+    pos.z = Math.max(-h, Math.min(h, pos.z));
+  }
+  enemy.mesh.lookAt(player.mesh.position.x, pos.y, player.mesh.position.z);
+  if (def.behavior === 'boss') enemy.mesh.userData.body.rotation.y += dt * 1.5;
+
+  // --- 攻撃 ---
+  const atk = def.attack;
+  if (atk) {
+    if (enemy.telegraphTimer >= 0) {
+      // 予兆中: 赤リングを拡大
+      enemy.telegraphTimer += dt;
+      const t = Math.min(enemy.telegraphTimer / atk.telegraph, 1);
+      const ring = enemy.telegraphRing;
+      ring.visible = true;
+      ring.position.set(pos.x, 0.05, pos.z);
+      ring.scale.setScalar(0.3 + t * atk.telegraphRadius);
+      ring.material.opacity = 0.4 + 0.5 * Math.sin(state.time * 20);
+      if (t >= 1) {
+        ring.visible = false;
+        enemy.telegraphTimer = -1;
+        fireEnemyAttack(enemy);
+      }
+    } else {
+      enemy.attackTimer -= dt;
+      if (enemy.attackTimer <= 0) {
+        enemy.attackTimer = atk.interval;
+        if (atk.telegraph) enemy.telegraphTimer = 0;  // 予兆開始
+        else fireEnemyAttack(enemy);                  // 即時発射
+      }
+    }
+  }
+
+  // --- 接触ダメージ ---
+  if (dist < def.radius + CONFIG.player.radius) {
+    damagePlayer(def.touchDamage);
+  }
+}
+
+// =====================================================================
+// ウェーブ管理
+// =====================================================================
+function startWave(n) {
+  state.wave = n;
+  const isBossWave = n % CONFIG.wave.bossEvery === 0;
+  if (isBossWave) {
+    spawnEnemy('boss', n);
+    const escorts = 2 + Math.floor(n / CONFIG.wave.bossEvery);
+    for (let i = 0; i < escorts; i++) spawnEnemy('chaser', n);
+    showWaveBanner('WAVE ' + n + '  - BOSS -');
+  } else {
+    const count = CONFIG.wave.baseCount + (n - 1) * CONFIG.wave.countPerWave;
+    for (let i = 0; i < count; i++) {
+      spawnEnemy(n >= 2 && i % 3 === 2 ? 'shooter' : 'chaser', n);
+    }
+    showWaveBanner('WAVE ' + n);
+  }
+  updateHud();
+}
+
+function onWaveClear() {
+  player.hp = Math.min(CONFIG.player.maxHp, player.hp + CONFIG.wave.clearHeal);
+  clearPool(bulletPool);
+  updateHud();
+  showWaveBanner('WAVE CLEAR!  +' + CONFIG.wave.clearHeal + ' HP');
+  setTimeout(() => {
+    if (state.phase === 'playing') startWave(state.wave + 1);
+  }, 1600);
+}
+
+// =====================================================================
+// 入力(キーボード + 仮想ジョイスティック)
+// =====================================================================
+const input = { x: 0, z: 0 };
+const keys = {};
+
+window.addEventListener('keydown', (e) => { keys[e.code] = true; });
+window.addEventListener('keyup', (e) => { keys[e.code] = false; });
+
+const joyEl = document.getElementById('joystick');
+const joyKnob = document.getElementById('joy-knob');
+const joy = { active: false, id: null, ox: 0, oy: 0, x: 0, z: 0 };
+const JOY_RANGE = 50;
+
+function joyStart(x, y, id) {
+  joy.active = true; joy.id = id;
+  joy.ox = x; joy.oy = y;
+  joyEl.style.display = 'block';
+  joyEl.style.left = x + 'px';
+  joyEl.style.top = y + 'px';
+  joyKnob.style.left = '0px';
+  joyKnob.style.top = '0px';
+}
+function joyMove(x, y) {
+  let dx = x - joy.ox, dy = y - joy.oy;
+  const len = Math.hypot(dx, dy);
+  if (len > JOY_RANGE) { dx = dx / len * JOY_RANGE; dy = dy / len * JOY_RANGE; }
+  joyKnob.style.left = dx + 'px';
+  joyKnob.style.top = dy + 'px';
+  joy.x = dx / JOY_RANGE;
+  joy.z = dy / JOY_RANGE;
+}
+function joyEnd() {
+  joy.active = false; joy.id = null; joy.x = 0; joy.z = 0;
+  joyEl.style.display = 'none';
+}
+
+canvas.addEventListener('touchstart', (e) => {
+  e.preventDefault();
+  if (!joy.active) {
+    const t = e.changedTouches[0];
+    joyStart(t.clientX, t.clientY, t.identifier);
+  }
+}, { passive: false });
+canvas.addEventListener('touchmove', (e) => {
+  e.preventDefault();
+  for (const t of e.changedTouches) {
+    if (t.identifier === joy.id) joyMove(t.clientX, t.clientY);
+  }
+}, { passive: false });
+['touchend', 'touchcancel'].forEach((ev) =>
+  canvas.addEventListener(ev, (e) => {
+    for (const t of e.changedTouches) {
+      if (t.identifier === joy.id) joyEnd();
+    }
+  })
+);
+
+// iOS Safari のダブルタップズーム・ピンチズーム抑止
+document.addEventListener('dblclick', (e) => e.preventDefault());
+document.addEventListener('gesturestart', (e) => e.preventDefault());
+let lastTouchEnd = 0;
+document.addEventListener('touchend', (e) => {
+  const now = Date.now();
+  if (now - lastTouchEnd < 350) e.preventDefault();
+  lastTouchEnd = now;
+}, { passive: false });
+
+function readInput() {
+  let x = 0, z = 0;
+  if (keys['KeyW'] || keys['ArrowUp']) z -= 1;
+  if (keys['KeyS'] || keys['ArrowDown']) z += 1;
+  if (keys['KeyA'] || keys['ArrowLeft']) x -= 1;
+  if (keys['KeyD'] || keys['ArrowRight']) x += 1;
+  if (joy.active) { x += joy.x; z += joy.z; }
+  const len = Math.hypot(x, z);
+  if (len > 1) { x /= len; z /= len; }
+  input.x = x; input.z = z;
+}
+
+// =====================================================================
+// ゲームループ
+// =====================================================================
+const state = {
+  phase: 'title',   // 'title' | 'playing' | 'gameover'
+  wave: 1,
+  score: 0,
+  time: 0,
+};
+const clock = new THREE.Clock();
+
+function nearestEnemy() {
+  let best = null, bestD = Infinity;
+  for (const e of enemies) {
+    const d = e.mesh.position.distanceToSquared(player.mesh.position);
+    if (d < bestD) { bestD = d; best = e; }
+  }
+  return best;
+}
+
+function updatePlayer(dt) {
+  readInput();
+  const moving = Math.hypot(input.x, input.z) > 0.05;
+  player.moving = moving;
+  const pos = player.mesh.position;
+
+  if (moving) {
+    pos.x += input.x * CONFIG.player.speed * dt;
+    pos.z += input.z * CONFIG.player.speed * dt;
+    const h = CONFIG.arena.half - CONFIG.player.radius;
+    pos.x = Math.max(-h, Math.min(h, pos.x));
+    pos.z = Math.max(-h, Math.min(h, pos.z));
+    player.mesh.rotation.y = Math.atan2(input.x, input.z);
+    player.fireTimer = Math.min(player.fireTimer, 0.15); // 停止直後すぐ撃てるように
+  } else {
+    // 停止中: 最寄りの敵へオート攻撃
+    const target = nearestEnemy();
+    if (target) {
+      player.mesh.lookAt(target.mesh.position.x, 0, target.mesh.position.z);
+      player.fireTimer -= dt;
+      if (player.fireTimer <= 0) {
+        player.fireTimer = CONFIG.player.fireInterval;
+        const dir = new THREE.Vector3()
+          .subVectors(target.mesh.position, pos);
+        dir.y = 0; dir.normalize();
+        const origin = pos.clone(); origin.y = 1.0;
+        spawnFromPool(arrowPool, origin, dir, CONFIG.player.arrowSpeed, CONFIG.player.arrowDamage);
+      }
+    }
+  }
+
+  if (player.invincible > 0) {
+    player.invincible -= dt;
+    player.mesh.visible = Math.floor(state.time * 16) % 2 === 0; // 点滅
+  } else {
+    player.mesh.visible = true;
+  }
+}
+
+function updateProjectiles(dt) {
+  const h = CONFIG.arena.half + 3;
+  // プレイヤーの矢 → 敵
+  for (const b of arrowPool) {
+    if (!b.active) continue;
+    b.mesh.position.addScaledVector(b.vel, dt);
+    b.life -= dt;
+    const p = b.mesh.position;
+    if (b.life <= 0 || Math.abs(p.x) > h || Math.abs(p.z) > h) { deactivate(b); continue; }
+    for (const e of enemies) {
+      const r = e.def.radius + 0.25;
+      if (p.distanceToSquared(e.mesh.position.clone().setY(p.y)) < r * r) {
+        deactivate(b);
+        damageEnemy(e, b.damage);
+        break;
+      }
+    }
+  }
+  // 敵弾 → プレイヤー
+  const pr = CONFIG.player.radius + 0.22;
+  for (const b of bulletPool) {
+    if (!b.active) continue;
+    b.mesh.position.addScaledVector(b.vel, dt);
+    b.life -= dt;
+    const p = b.mesh.position;
+    if (b.life <= 0 || Math.abs(p.x) > h || Math.abs(p.z) > h) { deactivate(b); continue; }
+    const pp = player.mesh.position;
+    const dx = p.x - pp.x, dz = p.z - pp.z;
+    if (dx * dx + dz * dz < pr * pr) {
+      deactivate(b);
+      damagePlayer(b.damage);
+    }
+  }
+}
+
+function updateCamera(dt) {
+  const o = CONFIG.camera.offset;
+  const target = new THREE.Vector3(
+    player.mesh.position.x + o.x, o.y, player.mesh.position.z + o.z
+  );
+  camera.position.lerp(target, Math.min(1, CONFIG.camera.lerp * dt));
+  camera.lookAt(player.mesh.position.x, 0, player.mesh.position.z);
+}
+
+function animate() {
+  requestAnimationFrame(animate);
+  const dt = Math.min(clock.getDelta(), 0.05);
+  state.time += dt;
+
+  if (state.phase === 'playing') {
+    updatePlayer(dt);
+    for (let i = enemies.length - 1; i >= 0; i--) updateEnemy(enemies[i], dt);
+    updateProjectiles(dt);
+  }
+  updateCamera(dt);
+  renderer.render(scene, camera);
+}
+
+// =====================================================================
+// UI同期・画面遷移
+// =====================================================================
+const hudEl = document.getElementById('hud');
+const hpBar = document.getElementById('hp-bar-inner');
+const hpLabel = document.getElementById('hp-label');
+const waveLabel = document.getElementById('wave-label');
+const scoreLabel = document.getElementById('score-label');
+const waveBanner = document.getElementById('wave-banner');
+const titleScreen = document.getElementById('title-screen');
+const gameoverScreen = document.getElementById('gameover-screen');
+const goStats = document.getElementById('go-stats');
+
+function updateHud() {
+  const ratio = Math.max(0, player.hp / CONFIG.player.maxHp);
+  hpBar.style.width = (ratio * 100) + '%';
+  hpBar.style.background = ratio > 0.35
+    ? 'linear-gradient(90deg, #3f6, #6f9)'
+    : 'linear-gradient(90deg, #f43, #f86)';
+  hpLabel.textContent = 'HP ' + Math.ceil(player.hp) + ' / ' + CONFIG.player.maxHp;
+  waveLabel.textContent = 'WAVE ' + state.wave;
+  scoreLabel.textContent = 'SCORE ' + state.score;
+}
+
+let bannerTimeout = null;
+function showWaveBanner(text) {
+  waveBanner.textContent = text;
+  waveBanner.style.opacity = '1';
+  clearTimeout(bannerTimeout);
+  bannerTimeout = setTimeout(() => { waveBanner.style.opacity = '0'; }, 1400);
+}
+
+function startGame() {
+  while (enemies.length) removeEnemy(enemies[0]);
+  clearPool(arrowPool);
+  clearPool(bulletPool);
+  resetPlayer();
+  state.score = 0;
+  state.phase = 'playing';
+  titleScreen.style.display = 'none';
+  gameoverScreen.style.display = 'none';
+  hudEl.style.display = 'block';
+  startWave(1);
+}
+
+function gameOver() {
+  state.phase = 'gameover';
+  goStats.innerHTML = 'WAVE ' + state.wave + ' 到達<br>SCORE ' + state.score;
+  gameoverScreen.style.display = 'flex';
+  hudEl.style.display = 'none';
+  joyEnd();
+}
+
+document.getElementById('start-btn').addEventListener('click', startGame);
+document.getElementById('retry-btn').addEventListener('click', startGame);
+
+// 初期カメラ位置
+camera.position.set(CONFIG.camera.offset.x, CONFIG.camera.offset.y, CONFIG.camera.offset.z);
+camera.lookAt(0, 0, 0);
+animate();
+</script>
+</body>
+</html>
