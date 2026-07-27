@@ -164,8 +164,11 @@ const CONFIG = {
     spawnMinDist: 10,               // プレイヤーからの最小スポーン距離
   },
   camera: {
-    offset: { x: 0, y: 18, z: 12 }, // プレイヤーからの相対位置
+    offset: { x: 0, y: 26, z: 11 }, // プレイヤーからの相対位置(向きと最小の引き量を決める基準)
     lerp: 4.0,                      // 追従の滑らかさ
+    fov: 60,
+    visibleRadius: 14,              // プレイヤー中心のこの半径が必ず画面内に収まるよう距離を自動調整
+    maxDistanceScale: 2.2,          // 縦長画面での引きすぎ防止(offset の何倍まで離すか)
   },
   pool: { arrows: 40, bullets: 300 },
 };
@@ -241,24 +244,26 @@ renderer.setSize(window.innerWidth, window.innerHeight);
 
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x0a0a14);
-scene.fog = new THREE.Fog(0x0a0a14, 40, 75);
+scene.fog = new THREE.Fog(0x0a0a14, 40, 75);   // 実値は updateCameraProjection() が距離に合わせて更新
 
-const camera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerHeight, 0.1, 200);
+const camera = new THREE.PerspectiveCamera(
+  CONFIG.camera.fov, window.innerWidth / window.innerHeight, 0.1, 400
+);
 
 scene.add(new THREE.AmbientLight(0x8888aa, 0.7));
 const dirLight = new THREE.DirectionalLight(0xffffff, 0.9);
 dirLight.position.set(10, 30, 10);
 scene.add(dirLight);
 
-// 床
-const floorSize = CONFIG.arena.half * 2 + 8;
+// 床(カメラを引いた分だけアリーナ外周も見えるので広めに敷く)
+const floorSize = CONFIG.arena.half * 2 + 48;
 const floor = new THREE.Mesh(
   new THREE.PlaneGeometry(floorSize, floorSize),
   new THREE.MeshLambertMaterial({ color: 0x1a1f33 })
 );
 floor.rotation.x = -Math.PI / 2;
 scene.add(floor);
-const grid = new THREE.GridHelper(floorSize, 25, 0x334466, 0x232a44);
+const grid = new THREE.GridHelper(floorSize, Math.round(floorSize / 2), 0x334466, 0x232a44);
 grid.position.y = 0.01;
 scene.add(grid);
 
@@ -276,9 +281,49 @@ scene.add(grid);
   });
 })();
 
-window.addEventListener('resize', () => {
-  camera.aspect = window.innerWidth / window.innerHeight;
+// カメラの引き量(基準 offset の倍率)。画面比に応じて updateCameraProjection() が決める
+let cameraDistanceScale = 1;
+
+// 「プレイヤー中心 visibleRadius の円が必ず画面内に入る」ように、基準 offset を
+// 一様スケールして引きの量を決める。画面下(手前)方向と、縦長画面での左右方向が
+// いちばん狭くなるので、その 3 方向の必要量の最大値を採用する。
+function updateCameraProjection() {
+  const c = CONFIG.camera;
+  const aspect = window.innerWidth / window.innerHeight;
+  const R = c.visibleRadius;
+  const hy = c.offset.y;                          // 基準の高さ
+  const dz = Math.hypot(c.offset.x, c.offset.z);  // 基準の水平距離
+  const baseLen = Math.hypot(hy, dz);
+  const pitch = Math.atan2(hy, dz);               // 水平からの見下ろし角
+  const halfFov = (c.fov * Math.PI / 180) / 2;
+
+  // 画面下端の光線が地面に届く距離(プレイヤーより手前側)
+  const nearSpan = dz - hy / Math.tan(pitch + halfFov);
+  let scale = nearSpan > 0 ? R / nearSpan : c.maxDistanceScale;
+  // 画面上端(奥側)。上端が地平線より上を向くなら無限遠なので制約なし
+  const topAngle = pitch - halfFov;
+  if (topAngle > 0) {
+    const farSpan = hy / Math.tan(topAngle) - dz;
+    if (farSpan > 0) scale = Math.max(scale, R / farSpan);
+  }
+  // 左右: プレイヤー位置での見える半幅 = カメラ距離 * aspect * tan(fov/2)
+  const sideSpan = baseLen * aspect * Math.tan(halfFov);
+  if (sideSpan > 0) scale = Math.max(scale, R / sideSpan);
+
+  cameraDistanceScale = Math.min(Math.max(scale, 1), c.maxDistanceScale);
+
+  camera.fov = c.fov;
+  camera.aspect = aspect;
   camera.updateProjectionMatrix();
+
+  // 引いた分フォグも遠ざけ、霧の掛かり方を画面比によらず一定に保つ
+  const dist = baseLen * cameraDistanceScale;
+  scene.fog.near = dist * 1.8;
+  scene.fog.far = dist * 3.4;
+}
+
+window.addEventListener('resize', () => {
+  updateCameraProjection();
   renderer.setSize(window.innerWidth, window.innerHeight);
 });
 
@@ -749,8 +794,9 @@ function updateProjectiles(dt) {
 
 function updateCamera(dt) {
   const o = CONFIG.camera.offset;
+  const k = cameraDistanceScale;
   const target = new THREE.Vector3(
-    player.mesh.position.x + o.x, o.y, player.mesh.position.z + o.z
+    player.mesh.position.x + o.x * k, o.y * k, player.mesh.position.z + o.z * k
   );
   camera.position.lerp(target, Math.min(1, CONFIG.camera.lerp * dt));
   camera.lookAt(player.mesh.position.x, 0, player.mesh.position.z);
@@ -827,7 +873,12 @@ document.getElementById('start-btn').addEventListener('click', startGame);
 document.getElementById('retry-btn').addEventListener('click', startGame);
 
 // 初期カメラ位置
-camera.position.set(CONFIG.camera.offset.x, CONFIG.camera.offset.y, CONFIG.camera.offset.z);
+updateCameraProjection();
+camera.position.set(
+  CONFIG.camera.offset.x * cameraDistanceScale,
+  CONFIG.camera.offset.y * cameraDistanceScale,
+  CONFIG.camera.offset.z * cameraDistanceScale
+);
 camera.lookAt(0, 0, 0);
 animate();
 </script>
