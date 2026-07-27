@@ -5,9 +5,9 @@ Three.js による単一 HTML ファイル構成で、ビルド不要でその�
 
 ## 遊ぶ
 
-**GitHub Pages URL**: (公開後にここへ記入 → `https://hokuto-create.github.io/bullet-archer/`)
+**GitHub Pages URL**: https://hokuto-create.github.io/bullet-archer/
 
-> GitHub Pages の有効化: リポジトリの Settings → Pages → Branch を `main` / `(root)` に設定
+> main へのプッシュで `.github/workflows/pages.yml` が自動デプロイします
 
 ## 操作方法
 
