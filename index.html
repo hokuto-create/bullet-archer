@@ -165,7 +165,7 @@ const CONFIG = {
   },
   camera: {
     offset: { x: 0, y: 26, z: 11 }, // プレイヤーからの相対位置(向きと最小の引き量を決める基準)
-    lerp: 4.0,                      // 追従の滑らかさ
+    followSmoothing: 0,             // 追従の遅れ(秒)。0 で完全追従。大きいほど「ぬるっ」と遅れて酔いやすい
     fov: 60,
     visibleRadius: 14,              // プレイヤー中心のこの半径が必ず画面内に収まるよう距離を自動調整
     maxDistanceScale: 2.2,          // 縦長画面での引きすぎ防止(offset の何倍まで離すか)
@@ -255,8 +255,9 @@ const dirLight = new THREE.DirectionalLight(0xffffff, 0.9);
 dirLight.position.set(10, 30, 10);
 scene.add(dirLight);
 
-// 床(カメラを引いた分だけアリーナ外周も見えるので広めに敷く)
-const floorSize = CONFIG.arena.half * 2 + 48;
+// 床(カメラを引いた分だけアリーナ外周も見えるので広めに敷く。
+// 縦長画面でアリーナ隅に立っても床の外が映らない大きさ)
+const floorSize = CONFIG.arena.half * 2 + 96;
 const floor = new THREE.Mesh(
   new THREE.PlaneGeometry(floorSize, floorSize),
   new THREE.MeshLambertMaterial({ color: 0x1a1f33 })
@@ -792,14 +793,19 @@ function updateProjectiles(dt) {
   }
 }
 
+// プレイヤーに対して固定オフセットを保つ。followSmoothing が 0 なら遅れなしの完全追従で、
+// 画面の流れが入力と 1:1 になる(遅れて滑り込む動きは酔いの原因になるため既定は 0)
 function updateCamera(dt) {
-  const o = CONFIG.camera.offset;
+  const c = CONFIG.camera;
   const k = cameraDistanceScale;
-  const target = new THREE.Vector3(
-    player.mesh.position.x + o.x * k, o.y * k, player.mesh.position.z + o.z * k
-  );
-  camera.position.lerp(target, Math.min(1, CONFIG.camera.lerp * dt));
-  camera.lookAt(player.mesh.position.x, 0, player.mesh.position.z);
+  const p = player.mesh.position;
+  const tx = p.x + c.offset.x * k, ty = c.offset.y * k, tz = p.z + c.offset.z * k;
+  // 指数減衰なのでフレームレートが変わっても追従の速さは一定
+  const s = c.followSmoothing > 0 ? 1 - Math.exp(-dt / c.followSmoothing) : 1;
+  camera.position.x += (tx - camera.position.x) * s;
+  camera.position.y += (ty - camera.position.y) * s;
+  camera.position.z += (tz - camera.position.z) * s;
+  camera.lookAt(p.x, 0, p.z);
 }
 
 function animate() {

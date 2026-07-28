@@ -16,7 +16,7 @@ GitHub Pages で公開する前提の、ビルド不要な単一 `index.html` �
 - 停止中のみ最寄りの敵へオート攻撃(矢)
 - 敵3種: `chaser`(突進・接触ダメージ)/ `shooter`(距離を保って狙撃)/ `boss`(5ウェーブごと、赤リング予兆→全方位弾幕)
 - ウェーブクリアで HP+15(上限100)、敵弾は全消去
-- カメラはプレイヤーを lerp 追従する俯瞰視点。`CONFIG.camera.visibleRadius`(プレイヤー中心のこの半径は必ず画面内)を満たすよう、`updateCameraProjection()` が画面比から基準 `offset` の倍率(`cameraDistanceScale`)を算出する。縦長画面ほど自動的に引く(上限 `maxDistanceScale`)
+- カメラはプレイヤーに固定オフセットで追従する俯瞰視点。既定は遅れなしの完全追従(`CONFIG.camera.followSmoothing: 0`)。遅れて滑り込む動きは酔いの原因になるため増やさないこと(値は「遅れの秒数」で、指数減衰なのでフレームレート非依存)。`CONFIG.camera.visibleRadius`(プレイヤー中心のこの半径は必ず画面内)を満たすよう、`updateCameraProjection()` が画面比から基準 `offset` の倍率(`cameraDistanceScale`)を算出する。縦長画面ほど自動的に引く(上限 `maxDistanceScale`)
 - iOS Safari 対応: `touch-action: none`、`viewport-fit=cover`、ダブルタップ/ピンチズーム抑止
 
 ## コーディング方針
