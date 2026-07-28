@@ -164,11 +164,11 @@ const CONFIG = {
     spawnMinDist: 10,               // プレイヤーからの最小スポーン距離
   },
   camera: {
-    offset: { x: 0, y: 26, z: 11 }, // プレイヤーからの相対位置(向きと最小の引き量を決める基準)
+    // 平行投影なので offset は「見下ろす向き」だけを決める(距離は画の大きさに影響しない)
+    offset: { x: 0, y: 26, z: 11 },
     followSmoothing: 0,             // 追従の遅れ(秒)。0 で完全追従。大きいほど「ぬるっ」と遅れて酔いやすい
-    fov: 60,
-    visibleRadius: 14,              // プレイヤー中心のこの半径が必ず画面内に収まるよう距離を自動調整
-    maxDistanceScale: 2.2,          // 縦長画面での引きすぎ防止(offset の何倍まで離すか)
+    visibleRadius: 14,              // プレイヤー中心のこの半径が必ず画面内に収まるよう画角を自動調整
+    distance: 70,                   // カメラを置く距離。near/far に収めるためだけの値
   },
   pool: { arrows: 40, bullets: 300 },
 };
@@ -244,11 +244,19 @@ renderer.setSize(window.innerWidth, window.innerHeight);
 
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x0a0a14);
-scene.fog = new THREE.Fog(0x0a0a14, 40, 75);   // 実値は updateCameraProjection() が距離に合わせて更新
+// フォグは使わない: 平行投影では画面内の奥行き差がごく小さく、距離の霧ではなく
+// 「画面上側だけ暗くする幕」になってしまい、奥の敵が見えにくくなるため
 
-const camera = new THREE.PerspectiveCamera(
-  CONFIG.camera.fov, window.innerWidth / window.innerHeight, 0.1, 400
-);
+// 平行投影(オルソ)。透視投影だと横に動くたび消失点がずれ、壁やグリッドの角度が
+// 変わって見える(移動 30 ユニットで約 23 度)。平行投影ならカメラを平行移動しても
+// 見た目の角度が一切変わらないので、酔いの原因になる「世界が回る」感じが出ない。
+// 画角(left/right/top/bottom)は updateCameraProjection() が画面比から決める
+const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 400);
+
+// カメラを置く相対位置。平行投影では向きだけが画に効くので長さは固定でよい
+const camOffset = new THREE.Vector3(
+  CONFIG.camera.offset.x, CONFIG.camera.offset.y, CONFIG.camera.offset.z
+).normalize().multiplyScalar(CONFIG.camera.distance);
 
 // 環境光 + 平行光の合計が 1 を大きく超えると色が白飛びしてトゥーンの段差も消えるので、
 // 合計 1.2 前後に抑えている
@@ -284,45 +292,20 @@ scene.add(grid);
   });
 })();
 
-// カメラの引き量(基準 offset の倍率)。画面比に応じて updateCameraProjection() が決める
-let cameraDistanceScale = 1;
-
-// 「プレイヤー中心 visibleRadius の円が必ず画面内に入る」ように、基準 offset を
-// 一様スケールして引きの量を決める。画面下(手前)方向と、縦長画面での左右方向が
-// いちばん狭くなるので、その 3 方向の必要量の最大値を採用する。
+// 「プレイヤー中心 visibleRadius の円が必ず画面内に入る」よう平行投影の画角を決める。
+// 見下ろしているぶん地面は画面縦方向に sin(pitch) 倍に潰れて写るので、
+// 縦は必要量を sin(pitch) 倍しておく。縦長画面では左右がいちばん狭くなる。
 function updateCameraProjection() {
   const c = CONFIG.camera;
   const aspect = window.innerWidth / window.innerHeight;
   const R = c.visibleRadius;
-  const hy = c.offset.y;                          // 基準の高さ
-  const dz = Math.hypot(c.offset.x, c.offset.z);  // 基準の水平距離
-  const baseLen = Math.hypot(hy, dz);
-  const pitch = Math.atan2(hy, dz);               // 水平からの見下ろし角
-  const halfFov = (c.fov * Math.PI / 180) / 2;
+  const pitch = Math.atan2(c.offset.y, Math.hypot(c.offset.x, c.offset.z));
 
-  // 画面下端の光線が地面に届く距離(プレイヤーより手前側)
-  const nearSpan = dz - hy / Math.tan(pitch + halfFov);
-  let scale = nearSpan > 0 ? R / nearSpan : c.maxDistanceScale;
-  // 画面上端(奥側)。上端が地平線より上を向くなら無限遠なので制約なし
-  const topAngle = pitch - halfFov;
-  if (topAngle > 0) {
-    const farSpan = hy / Math.tan(topAngle) - dz;
-    if (farSpan > 0) scale = Math.max(scale, R / farSpan);
-  }
-  // 左右: プレイヤー位置での見える半幅 = カメラ距離 * aspect * tan(fov/2)
-  const sideSpan = baseLen * aspect * Math.tan(halfFov);
-  if (sideSpan > 0) scale = Math.max(scale, R / sideSpan);
-
-  cameraDistanceScale = Math.min(Math.max(scale, 1), c.maxDistanceScale);
-
-  camera.fov = c.fov;
-  camera.aspect = aspect;
+  const halfH = Math.max(R / aspect, R * Math.sin(pitch));
+  const halfW = halfH * aspect;
+  camera.left = -halfW; camera.right = halfW;
+  camera.top = halfH; camera.bottom = -halfH;
   camera.updateProjectionMatrix();
-
-  // 引いた分フォグも遠ざけ、霧の掛かり方を画面比によらず一定に保つ
-  const dist = baseLen * cameraDistanceScale;
-  scene.fog.near = dist * 1.8;
-  scene.fog.far = dist * 3.4;
 }
 
 window.addEventListener('resize', () => {
@@ -1207,9 +1190,8 @@ function updateProjectiles(dt) {
 // 画面の流れが入力と 1:1 になる(遅れて滑り込む動きは酔いの原因になるため既定は 0)
 function updateCamera(dt) {
   const c = CONFIG.camera;
-  const k = cameraDistanceScale;
   const p = player.mesh.position;
-  const tx = p.x + c.offset.x * k, ty = c.offset.y * k, tz = p.z + c.offset.z * k;
+  const tx = p.x + camOffset.x, ty = camOffset.y, tz = p.z + camOffset.z;
   // 指数減衰なのでフレームレートが変わっても追従の速さは一定
   const s = c.followSmoothing > 0 ? 1 - Math.exp(-dt / c.followSmoothing) : 1;
   camera.position.x += (tx - camera.position.x) * s;
@@ -1290,11 +1272,7 @@ document.getElementById('retry-btn').addEventListener('click', startGame);
 
 // 初期カメラ位置
 updateCameraProjection();
-camera.position.set(
-  CONFIG.camera.offset.x * cameraDistanceScale,
-  CONFIG.camera.offset.y * cameraDistanceScale,
-  CONFIG.camera.offset.z * cameraDistanceScale
-);
+camera.position.copy(camOffset);
 camera.lookAt(0, 0, 0);
 animate();
 </script>
