@@ -14,6 +14,9 @@ GitHub Pages で公開する前提の、ビルド不要な単一 `index.html` �
 
 - 移動: WASD / 矢印キー + 仮想ジョイスティック(タッチした位置に出現)
 - 停止中のみ最寄りの敵へオート攻撃(矢)
+- プレイヤーは頭の大きい 2 頭身のデフォルメ勇者(白銀の髪+鋼の装甲+赤いマント+木の弓)。
+  ボーン相当の `THREE.Group` を入れ子にして組み、`player.parts` 経由で
+  `updatePlayerAnimation()` が走り・構え・マント・弓引きを毎フレーム動かす
 - 敵3種: `chaser`(突進・接触ダメージ)/ `shooter`(距離を保って狙撃)/ `boss`(5ウェーブごと、赤リング予兆→全方位弾幕)
 - ウェーブクリアで HP+15(上限100)、敵弾は全消去
 - カメラはプレイヤーを lerp 追従する俯瞰視点。`CONFIG.camera.visibleRadius`(プレイヤー中心のこの半径は必ず画面内)を満たすよう、`updateCameraProjection()` が画面比から基準 `offset` の倍率(`cameraDistanceScale`)を算出する。縦長画面ほど自動的に引く(上限 `maxDistanceScale`)
@@ -27,6 +30,17 @@ GitHub Pages で公開する前提の、ビルド不要な単一 `index.html` �
 3. **データ駆動の敵・弾幕定義** — 敵の追加は `ENEMY_TYPES` にオブジェクトを足す。弾幕パターンの追加は `BULLET_PATTERNS` に「方向ベクトル配列を返す関数」を足し、敵定義の `attack.pattern` から名前で参照する
 4. **オブジェクトプール** — 矢・敵弾は `makePool` によるプールで管理。フレーム中の new を避ける
 5. 数値バランスは `CONFIG` に集約する
+6. **プレイヤーモデルの流儀** — 色は `HERO`、可動パーツは `buildPlayer()` 内で `P`(= `player.parts`)に登録し、
+   ポーズは `updatePlayerAnimation()` だけが書き換える。キャラは +Z が正面(`rotation.y` / `lookAt` がこの向きを作る)
+   - **角ばらせない**: 球・自作 `capsule()`(r128 に `CapsuleGeometry` が無いので `LatheGeometry` で代用)・
+     トーラス・円錐で組む。箱は使わない
+   - **セル調**: `MeshToonMaterial` + 4 段の `gradientMap`(`DataTexture`。`RedFormat` は WebGL1 で
+     使えないので RGBA で作る)。環境光+平行光の合計が 1 を大きく超えると白飛びしてトゥーンの段差が
+     消えるため、ライトは合計 1.2 前後に抑える
+   - **キャラとして自然に**: 発光する装飾やエフェクト的なパーツは付けない。鋼・革・布・木など
+     素材が伝わる色で組み、顔は目・眉・口・耳をちゃんと作る
+   - **俯瞰での視認性**: 髪・装甲・ブーツなど上から見える面を明るくし、足元に薄いリングを敷いて
+     自機位置が分かるようにしている
 
 ## 今後の予定(未実装)
 
