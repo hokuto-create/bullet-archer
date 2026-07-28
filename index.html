@@ -246,12 +246,10 @@ const CONFIG = {
     rise: 1.6,                      // 画面上へ浮き上がる距離
     jitter: 0.5,                    // 画面横方向のばらつき(HPバーの半分の幅に足す。数字同士とバーの重なり防止)
     height: 1.05,                   // 板の高さ(ワールド単位。平行投影なので画面上の大きさは一定)
-    killScale: 1.5,                 // とどめの一撃の倍率
     popScale: 1.55,                 // 出現直後の弾み
     popTime: 0.14,                  // 弾みが収まるまでの時間(秒)
     fadeStart: 0.55,                // 進行度がこれを超えてから薄くなり始める
-    color: '#fff4c9',               // 通常ヒットの文字色
-    killColor: '#ff8a3c',           // とどめの一撃の文字色
+    color: '#fff4c9',               // 文字色(ヒットの種類で変えない)
     outlineColor: '#20130a',        // 縁取り(明るい床の上でも読めるように)
     canvasW: 256, canvasH: 64, fontPx: 48,   // 文字を描くキャンバス(プール1要素につき1枚)
   },
@@ -1062,12 +1060,12 @@ const dmgTextPool = (function () {
     mesh.visible = false;
     scene.add(mesh);
     // base: 浮上前の基準位置。毎フレームここから上方向へ足し直す
-    items.push({ mesh, ctx, tex, life: 0, size: 1, base: new THREE.Vector3() });
+    items.push({ mesh, ctx, tex, life: 0, base: new THREE.Vector3() });
   }
   return items;
 })();
 
-function drawDmgText(item, text, color) {
+function drawDmgText(item, text) {
   const C = CONFIG.damageText;
   const ctx = item.ctx;
   ctx.clearRect(0, 0, C.canvasW, C.canvasH);
@@ -1075,7 +1073,7 @@ function drawDmgText(item, text, color) {
   ctx.lineWidth = C.fontPx * 0.22;
   ctx.strokeStyle = C.outlineColor;
   ctx.strokeText(text, C.canvasW / 2, C.canvasH / 2);
-  ctx.fillStyle = color;
+  ctx.fillStyle = C.color;
   ctx.fillText(text, C.canvasW / 2, C.canvasH / 2);
   item.tex.needsUpdate = true;
 }
@@ -1083,9 +1081,9 @@ function drawDmgText(item, text, color) {
 const dmgTextUp = new THREE.Vector3();      // カメラの真上方向(ワールド)。毎フレームの new を避ける
 const dmgTextRight = new THREE.Vector3();
 
-// pos: ワールド座標 / up: そこから画面上へ逃がす距離 / isKill: とどめの一撃なら大きく色を変える /
+// pos: ワールド座標 / up: そこから画面上へ逃がす距離 /
 // spread: 画面横方向にばらす幅(HPバーの上に数字が居座らないよう、バーの幅に応じて広げる)
-function spawnDamageText(pos, amount, up, isKill, spread) {
+function spawnDamageText(pos, amount, up, spread) {
   const C = CONFIG.damageText;
   // 空きが無ければ一番古い(残り時間が最短の)ものを奪う。
   // バーストの同時ヒットでも「出たはずの数字が出ない」ことがないように
@@ -1095,8 +1093,7 @@ function spawnDamageText(pos, amount, up, isKill, spread) {
     if (!item || it.life < item.life) item = it;
   }
   item.life = C.duration;
-  item.size = isKill ? C.killScale : 1;
-  drawDmgText(item, '-' + Math.max(1, Math.round(amount)), isKill ? C.killColor : C.color);
+  drawDmgText(item, '-' + Math.max(1, Math.round(amount)));
 
   dmgTextUp.set(0, 1, 0).applyQuaternion(camera.quaternion);
   dmgTextRight.set(1, 0, 0).applyQuaternion(camera.quaternion);
@@ -1122,7 +1119,7 @@ function updateDamageTexts(dt) {
     item.mesh.quaternion.copy(camera.quaternion);
     // 出現直後だけ大きく弾ませる(当たった瞬間の手応え)
     const pop = 1 + (C.popScale - 1) * Math.max(0, 1 - elapsed / C.popTime);
-    const h = C.height * item.size * pop;
+    const h = C.height * pop;
     item.mesh.scale.set(h * aspect, h, 1);
     item.mesh.material.opacity = t < C.fadeStart ? 1 : 1 - (t - C.fadeStart) / (1 - C.fadeStart);
   }
@@ -1387,7 +1384,7 @@ function damageEnemy(enemy, amount) {
   // 与ダメージを数値で出す(removeEnemy より先に。死んだ敵の位置は取れなくなる)。
   // 胴の高さは見下ろし角で画面上 camUpDot 倍に潰れるので、そこだけ掛けて補正する
   spawnDamageText(
-    enemy.mesh.position, amount, body.position.y * camUpDot + 0.3, enemy.hp <= 0,
+    enemy.mesh.position, amount, body.position.y * camUpDot + 0.3,
     enemy.hpBar.w / 2 + CONFIG.damageText.jitter
   );
   if (enemy.hp <= 0) {
