@@ -227,6 +227,18 @@ const CONFIG = {
     shotDamage: 12,
     fxScale: 3.2,                   // 発動リングの大きさ(graze の白リングを使い回す)
   },
+  // 敵の頭上に出すHPバー(サイズはワールド単位。平行投影なので画面上の大きさは常に一定)
+  hpBar: {
+    width: 1.5, height: 0.15,       // 通常敵のバー
+    bossWidth: 3.4, bossHeight: 0.26,
+    border: 0.05,                   // 背景板が本体からはみ出す幅
+    margin: 0.5,                    // 敵の頭のてっぺんからバーまでの隙間(画面上の距離)
+    lagSmoothing: 0.3,              // 削れた分を追いかける白バーの遅れ(秒)。0 で即時
+    bgColor: 0x0d1018, bgOpacity: 0.7,
+    lagColor: 0xffffff,             // 直前のHPを示す白い帯
+    colorHigh: 0x5fe06a, colorMid: 0xf5c53a, colorLow: 0xf1503c,
+    midRatio: 0.5, lowRatio: 0.25,  // HP割合がこれ以下になったら mid / low の色にする
+  },
   camera: {
     // 平行投影なので offset は「見下ろす向き」だけを決める(距離は画の大きさに影響しない)
     offset: { x: 0, y: 26, z: 11 },
@@ -1112,6 +1124,70 @@ function updateLaser(enemy, dt) {
   fx.guide.visible = true;
 }
 
+// --- 敵HPバー ---
+// カメラは向きが固定(平行投影・回転しない)なので、板をカメラの姿勢に合わせれば常に正面を向く。
+// 敵の Group は lookAt でヨーが変わってしまうため、バーは scene 直下に置いて位置だけ毎フレーム合わせる。
+// ジオメトリは全敵で共有し、大きさは scale で作る(フレーム中に new しない)。
+const hpBarBgGeo = new THREE.PlaneGeometry(1, 1);
+const hpBarFillGeo = new THREE.PlaneGeometry(1, 1).translate(0.5, 0, 0);  // 左端を軸に伸縮させる
+
+// depthTest を切って手前に描く。敵や壁に隠れて読めなくなる方が困るため
+function makeHpBarPart(geo, color, opacity, order) {
+  const m = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({
+    color, transparent: true, opacity, depthTest: false, depthWrite: false, side: THREE.DoubleSide,
+  }));
+  m.renderOrder = order;
+  return m;
+}
+
+function makeHpBar(def, isBoss) {
+  const C = CONFIG.hpBar;
+  const w = isBoss ? C.bossWidth : C.width;
+  const h = isBoss ? C.bossHeight : C.height;
+  const group = new THREE.Group();
+
+  const bg = makeHpBarPart(hpBarBgGeo, C.bgColor, C.bgOpacity, 10);
+  bg.scale.set(w + C.border * 2, h + C.border * 2, 1);
+  const lag = makeHpBarPart(hpBarFillGeo, C.lagColor, 0.55, 11);
+  const fill = makeHpBarPart(hpBarFillGeo, C.colorHigh, 1, 12);
+  lag.position.x = fill.position.x = -w / 2;
+  lag.scale.set(w, h, 1);
+  fill.scale.set(w, h, 1);
+  group.add(bg, lag, fill);
+  scene.add(group);
+
+  // 頭のてっぺん(buildEnemyMesh のボディ位置＋高さの半分)の分だけ上に逃がす。
+  // 見下ろしているのでワールドの高さは画面上 camUpDot 倍に潰れて見える。
+  // margin は「画面上の隙間」なので潰れない
+  const top = isBoss ? def.radius * 2 + 0.4 : def.radius * 1.9;
+  return { group, bg, lag, fill, w, up: top * camUpDot + C.margin, lagRatio: 1 };
+}
+
+// ワールドの +Y が画面上でどれだけ縦に見えるか(= cos(見下ろし角))
+const camUpDot = Math.hypot(camOffset.x, camOffset.z) / camOffset.length();
+const hpBarUp = new THREE.Vector3();   // カメラの真上方向(ワールド)。毎フレームの new を避ける
+
+function updateHpBar(enemy, dt) {
+  const C = CONFIG.hpBar;
+  const bar = enemy.hpBar;
+  const ratio = clamp(enemy.hp / enemy.maxHp, 0, 1);
+
+  // 削れた分は白い帯が少し遅れて追いつく(指数減衰なのでフレームレート非依存)
+  if (bar.lagRatio < ratio) bar.lagRatio = ratio;
+  else if (C.lagSmoothing > 0) bar.lagRatio += (ratio - bar.lagRatio) * (1 - Math.exp(-dt / C.lagSmoothing));
+  else bar.lagRatio = ratio;
+
+  // 敵の足元からカメラの上方向へ逃がす(ワールドの上方向だと見下ろし角で潰れて頭に重なる)
+  hpBarUp.set(0, 1, 0).applyQuaternion(camera.quaternion);
+  bar.group.position.copy(enemy.mesh.position).addScaledVector(hpBarUp, bar.up);
+  bar.group.quaternion.copy(camera.quaternion);   // カメラ正面を向く板にする
+  bar.fill.scale.x = bar.w * ratio;
+  bar.lag.scale.x = bar.w * bar.lagRatio;
+  bar.fill.material.color.setHex(
+    ratio <= C.lowRatio ? C.colorLow : ratio <= C.midRatio ? C.colorMid : C.colorHigh
+  );
+}
+
 function buildEnemyMesh(def, isBoss) {
   const group = new THREE.Group();
   const geo = isBoss
@@ -1144,6 +1220,7 @@ function spawnEnemy(typeName, waveNum) {
   const enemy = {
     type: typeName, def, mesh,
     hp, maxHp: hp,
+    hpBar: makeHpBar(def, isBoss),
     attackTimer: def.attack ? def.attack.interval * (0.5 + Math.random() * 0.5) : 0,
     telegraphTimer: -1,             // >=0 の間は予兆中
     telegraphRing: def.attack && def.attack.telegraph ? makeTelegraphRing() : null,
@@ -1164,6 +1241,12 @@ function spawnEnemy(typeName, waveNum) {
 function removeEnemy(enemy) {
   scene.remove(enemy.mesh);
   if (enemy.telegraphRing) scene.remove(enemy.telegraphRing);
+  if (enemy.hpBar) {
+    // ジオメトリは共有なのでマテリアルだけ捨てる
+    scene.remove(enemy.hpBar.group);
+    for (const m of [enemy.hpBar.bg, enemy.hpBar.lag, enemy.hpBar.fill]) m.material.dispose();
+    enemy.hpBar = null;
+  }
   if (enemy.laserFx) {
     // ジオメトリは共有なのでマテリアルだけ捨てる
     for (const m of [enemy.laserFx.guide, enemy.laserFx.beam, enemy.laserFx.core]) {
@@ -1255,6 +1338,7 @@ function updateEnemy(enemy, dt) {
     }
   }
   if (enemy.laserFx) updateLaser(enemy, dt);
+  updateHpBar(enemy, dt);
 
   // --- 接触ダメージ ---
   if (dist < def.radius + CONFIG.player.radius) {
