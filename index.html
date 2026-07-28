@@ -239,6 +239,22 @@ const CONFIG = {
     colorHigh: 0x5fe06a, colorMid: 0xf5c53a, colorLow: 0xf1503c,
     midRatio: 0.5, lowRatio: 0.25,  // HP割合がこれ以下になったら mid / low の色にする
   },
+  // 与ダメージのポップアップ数値(「-12」が敵の頭上に浮かんで消える)
+  damageText: {
+    count: 24,                      // 同時に出せる数(プール)
+    duration: 0.75,                 // 表示時間(秒)
+    rise: 1.6,                      // 画面上へ浮き上がる距離
+    jitter: 0.5,                    // 画面横方向のばらつき(HPバーの半分の幅に足す。数字同士とバーの重なり防止)
+    height: 1.05,                   // 板の高さ(ワールド単位。平行投影なので画面上の大きさは一定)
+    killScale: 1.5,                 // とどめの一撃の倍率
+    popScale: 1.55,                 // 出現直後の弾み
+    popTime: 0.14,                  // 弾みが収まるまでの時間(秒)
+    fadeStart: 0.55,                // 進行度がこれを超えてから薄くなり始める
+    color: '#fff4c9',               // 通常ヒットの文字色
+    killColor: '#ff8a3c',           // とどめの一撃の文字色
+    outlineColor: '#20130a',        // 縁取り(明るい床の上でも読めるように)
+    canvasW: 256, canvasH: 64, fontPx: 48,   // 文字を描くキャンバス(プール1要素につき1枚)
+  },
   camera: {
     // 平行投影なので offset は「見下ろす向き」だけを決める(距離は画の大きさに影響しない)
     offset: { x: 0, y: 26, z: 11 },
@@ -1013,6 +1029,110 @@ function resetGraze() {
 }
 
 // =====================================================================
+// ダメージ数値表示
+// =====================================================================
+// ヒットのたびに「-12」を敵の上に浮かせて消す。HPバーと同じ理由で板は scene 直下に置き、
+// カメラの姿勢をコピーするだけで常に正面を向く(カメラは回転しないため)。
+// 浮上と横ずれは**カメラの上/右方向**に取る。ワールドの +Y だと見下ろし角で潰れて
+// 「画面上で真上に上がる」動きにならない(呼び出し側が渡す up も画面上の距離)。
+// 文字はヒットごとに変わるのでプールの1要素が canvas を1枚ずつ持ち、
+// 描き直して needsUpdate を立てる(フレーム中に new しない)。
+const dmgTextGeo = new THREE.PlaneGeometry(1, 1);
+
+const dmgTextPool = (function () {
+  const C = CONFIG.damageText;
+  const items = [];
+  for (let i = 0; i < C.count; i++) {
+    const canvas = document.createElement('canvas');
+    canvas.width = C.canvasW;
+    canvas.height = C.canvasH;
+    const ctx = canvas.getContext('2d');
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.lineJoin = 'round';
+    const tex = new THREE.CanvasTexture(canvas);
+    // ミップマップを作らせない(WebGL1 では非2の冪テクスチャの作り直しが走るため)
+    tex.generateMipmaps = false;
+    tex.minFilter = THREE.LinearFilter;
+    tex.wrapS = tex.wrapT = THREE.ClampToEdgeWrapping;
+    const mesh = new THREE.Mesh(dmgTextGeo, new THREE.MeshBasicMaterial({
+      map: tex, transparent: true, depthTest: false, depthWrite: false, side: THREE.DoubleSide,
+    }));
+    mesh.renderOrder = 20;          // HPバー(10〜12)より手前
+    mesh.visible = false;
+    scene.add(mesh);
+    // base: 浮上前の基準位置。毎フレームここから上方向へ足し直す
+    items.push({ mesh, ctx, tex, life: 0, size: 1, base: new THREE.Vector3() });
+  }
+  return items;
+})();
+
+function drawDmgText(item, text, color) {
+  const C = CONFIG.damageText;
+  const ctx = item.ctx;
+  ctx.clearRect(0, 0, C.canvasW, C.canvasH);
+  ctx.font = '900 ' + C.fontPx + "px 'Helvetica Neue', Arial, sans-serif";
+  ctx.lineWidth = C.fontPx * 0.22;
+  ctx.strokeStyle = C.outlineColor;
+  ctx.strokeText(text, C.canvasW / 2, C.canvasH / 2);
+  ctx.fillStyle = color;
+  ctx.fillText(text, C.canvasW / 2, C.canvasH / 2);
+  item.tex.needsUpdate = true;
+}
+
+const dmgTextUp = new THREE.Vector3();      // カメラの真上方向(ワールド)。毎フレームの new を避ける
+const dmgTextRight = new THREE.Vector3();
+
+// pos: ワールド座標 / up: そこから画面上へ逃がす距離 / isKill: とどめの一撃なら大きく色を変える /
+// spread: 画面横方向にばらす幅(HPバーの上に数字が居座らないよう、バーの幅に応じて広げる)
+function spawnDamageText(pos, amount, up, isKill, spread) {
+  const C = CONFIG.damageText;
+  // 空きが無ければ一番古い(残り時間が最短の)ものを奪う。
+  // バーストの同時ヒットでも「出たはずの数字が出ない」ことがないように
+  let item = null;
+  for (const it of dmgTextPool) {
+    if (it.life <= 0) { item = it; break; }
+    if (!item || it.life < item.life) item = it;
+  }
+  item.life = C.duration;
+  item.size = isKill ? C.killScale : 1;
+  drawDmgText(item, '-' + Math.max(1, Math.round(amount)), isKill ? C.killColor : C.color);
+
+  dmgTextUp.set(0, 1, 0).applyQuaternion(camera.quaternion);
+  dmgTextRight.set(1, 0, 0).applyQuaternion(camera.quaternion);
+  item.base.copy(pos)
+    .addScaledVector(dmgTextUp, up)
+    .addScaledVector(dmgTextRight, (Math.random() * 2 - 1) * spread);
+  item.mesh.visible = true;
+}
+
+function updateDamageTexts(dt) {
+  const C = CONFIG.damageText;
+  const aspect = C.canvasW / C.canvasH;
+  dmgTextUp.set(0, 1, 0).applyQuaternion(camera.quaternion);
+  for (const item of dmgTextPool) {
+    if (item.life <= 0) continue;
+    item.life -= dt;
+    if (item.life <= 0) { item.mesh.visible = false; continue; }
+    const elapsed = C.duration - item.life;
+    const t = elapsed / C.duration;                                  // 0 → 1
+    // 浮上は最初が速い ease-out。カメラの上方向なので画面上で真上に上がる
+    item.mesh.position.copy(item.base)
+      .addScaledVector(dmgTextUp, C.rise * (1 - (1 - t) * (1 - t)));
+    item.mesh.quaternion.copy(camera.quaternion);
+    // 出現直後だけ大きく弾ませる(当たった瞬間の手応え)
+    const pop = 1 + (C.popScale - 1) * Math.max(0, 1 - elapsed / C.popTime);
+    const h = C.height * item.size * pop;
+    item.mesh.scale.set(h * aspect, h, 1);
+    item.mesh.material.opacity = t < C.fadeStart ? 1 : 1 - (t - C.fadeStart) / (1 - C.fadeStart);
+  }
+}
+
+function resetDamageTexts() {
+  for (const item of dmgTextPool) { item.life = 0; item.mesh.visible = false; }
+}
+
+// =====================================================================
 // 敵
 // =====================================================================
 const enemies = [];
@@ -1264,6 +1384,12 @@ function damageEnemy(enemy, amount) {
   const body = enemy.mesh.userData.body;
   body.material.emissive = new THREE.Color(0x661111);
   setTimeout(() => { body.material.emissive = new THREE.Color(0x000000); }, 80);
+  // 与ダメージを数値で出す(removeEnemy より先に。死んだ敵の位置は取れなくなる)。
+  // 胴の高さは見下ろし角で画面上 camUpDot 倍に潰れるので、そこだけ掛けて補正する
+  spawnDamageText(
+    enemy.mesh.position, amount, body.position.y * camUpDot + 0.3, enemy.hp <= 0,
+    enemy.hpBar.w / 2 + CONFIG.damageText.jitter
+  );
   if (enemy.hp <= 0) {
     state.score += enemy.def.score;
     removeEnemy(enemy);
@@ -1609,6 +1735,7 @@ function animate() {
     for (let i = enemies.length - 1; i >= 0; i--) updateEnemy(enemies[i], dt);
     updateProjectiles(dt);
     updateGrazeFx(dt);
+    updateDamageTexts(dt);
   }
   updateCamera(dt);
   renderer.render(scene, camera);
@@ -1669,6 +1796,7 @@ function startGame() {
   state.score = 0;
   state.phase = 'playing';
   resetGraze();
+  resetDamageTexts();
   titleScreen.style.display = 'none';
   gameoverScreen.style.display = 'none';
   hudEl.style.display = 'block';
