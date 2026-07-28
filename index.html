@@ -41,6 +41,45 @@
   #wave-label { font-size: 18px; font-weight: bold; color: #ffd76a; }
   #score-label { font-size: 14px; color: #ccc; }
   #hp-label { font-size: 11px; color: #cfc; margin-top: 2px; text-shadow: 0 1px 2px #000; }
+
+  /* ---- グレイズゲージ(HPバーの下)---- */
+  #graze-bar-outer {
+    width: min(46vw, 260px); height: 10px; margin-top: 6px;
+    background: rgba(255,255,255,0.12);
+    border: 1px solid rgba(255,255,255,0.35);
+    border-radius: 5px; overflow: hidden;
+  }
+  #graze-bar-inner {
+    width: 0%; height: 100%;
+    background: linear-gradient(90deg, #2b8fd6, #7fd8ff);
+    transition: width 0.12s;
+  }
+  /* 満タン(バースト可能)は金色に点滅 */
+  #graze-bar-inner.full {
+    background: linear-gradient(90deg, #f0a830, #fff0bb);
+    animation: graze-full 0.55s ease-in-out infinite;
+  }
+  @keyframes graze-full { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+  #graze-label { font-size: 11px; color: #bcdcf5; margin-top: 2px; text-shadow: 0 1px 2px #000; }
+  #graze-label.full { color: #ffd76a; font-weight: bold; }
+
+  /* ---- バーストボタン(ゲージ満タンのときだけ出る)---- */
+  #burst-btn {
+    position: fixed; z-index: 6; display: none;
+    right: calc(22px + env(safe-area-inset-right));
+    bottom: calc(30px + env(safe-area-inset-bottom));
+    width: 92px; height: 92px; border-radius: 50%;
+    border: 2px solid rgba(255,242,200,0.9);
+    background: radial-gradient(circle at 50% 34%, #ffeaa8, #ef9f24);
+    color: #3a2400; font: 900 17px/1 'Helvetica Neue', Arial, sans-serif;
+    letter-spacing: 0.06em; cursor: pointer; touch-action: none;
+    animation: burst-pulse 0.9s ease-in-out infinite;
+  }
+  #burst-btn:active { transform: scale(0.93); }
+  @keyframes burst-pulse {
+    0%, 100% { box-shadow: 0 0 16px rgba(255,190,60,0.5); }
+    50% { box-shadow: 0 0 34px rgba(255,215,100,0.95); }
+  }
   #wave-banner {
     position: fixed; top: 30%; left: 0; right: 0;
     text-align: center; font-size: 34px; font-weight: bold;
@@ -107,6 +146,8 @@
     <div>
       <div id="hp-bar-outer"><div id="hp-bar-inner"></div></div>
       <div id="hp-label">HP 100 / 100</div>
+      <div id="graze-bar-outer"><div id="graze-bar-inner"></div></div>
+      <div id="graze-label">GRAZE 0 / 100</div>
     </div>
     <div id="hud-right">
       <div id="wave-label">WAVE 1</div>
@@ -121,13 +162,16 @@
   <div id="joy-knob"></div>
 </div>
 
+<button id="burst-btn">BURST</button>
+
 <div id="title-screen" class="screen">
   <div id="title-main">BULLET ARCHER</div>
   <div id="title-sub">〜弾幕の射手〜</div>
   <p class="desc">
     移動: WASD / 矢印キー / 仮想ジョイスティック<br>
     立ち止まると最寄りの敵を自動攻撃!<br>
-    弾幕をかわしてウェーブを生き延びろ
+    敵弾を<b>かすめる</b>とグレイズゲージが溜まる<br>
+    満タンで SPACE / BURST ボタン → 弾消し + 全方位射撃
   </p>
   <button id="start-btn" class="btn">START</button>
 </div>
@@ -163,6 +207,26 @@ const CONFIG = {
     clearHeal: 15,                  // ウェーブクリア時の回復量
     spawnMinDist: 10,               // プレイヤーからの最小スポーン距離
   },
+  // グレイズ: 敵弾を「当たらないギリギリ」で通したときの判定と演出
+  graze: {
+    innerRadius: 0.55,              // これより内側はグレイズにしない(実際の被弾判定はこれより外なので下限として働く)
+    outerRadius: 1.3,               // ここまで近づいた弾がグレイズ成立
+    gaugeMax: 100,
+    gain: 8,                        // グレイズ1回の加算量(時間減衰はしない)
+    fxCount: 12,                    // 同時に出せる白リングの数
+    fxDuration: 0.24,               // 白リングの表示時間(秒)
+    fxStartScale: 1.25,             // リングの初期・最終倍率(リング半径 0.7 に掛かる)。
+    fxEndScale: 1.8,                // 足元リング(0.66)より外から outerRadius 付近まで広がる大きさ
+  },
+  // バースト: グレイズゲージを満タンで解放したときの効果
+  burst: {
+    duration: 1.5,                  // 攻撃速度アップの持続(秒)
+    fireRateMul: 2,                 // その間の攻撃速度倍率
+    shots: 16,                      // 発動時に撒く全方位弾の数
+    shotSpeed: 30,
+    shotDamage: 12,
+    fxScale: 3.2,                   // 発動リングの大きさ(graze の白リングを使い回す)
+  },
   camera: {
     // 平行投影なので offset は「見下ろす向き」だけを決める(距離は画の大きさに影響しない)
     offset: { x: 0, y: 26, z: 11 },
@@ -194,6 +258,18 @@ const ENEMY_TYPES = {
     touchDamage: 8,
     keepDistance: 11,               // この距離を保とうとする
     attack: { pattern: 'aimed', interval: 2.2, speed: 9, damage: 8 },
+    // テレグラフレーザー: 細い赤線で狙いを見せてから太いビームを撃つ。
+    // ビームは予兆時の角度で固定(追尾しない)ので、線の外へ出れば必ず避けられる
+    laser: {
+      fromWave: 3,                  // このウェーブ以降の shooter だけが使う
+      interval: 5.0,                // レーザー同士の間隔(秒)
+      telegraph: 0.8,               // 予兆(細い赤線)の時間(秒)
+      duration: 0.4,                // ビームが出ている時間(秒)
+      damage: 15,
+      length: 40,                   // アリーナを貫く長さ
+      guideWidth: 0.12,             // 予兆線の太さ
+      beamWidth: 1.1,               // ビームの太さ
+    },
   },
   boss: {
     behavior: 'boss',
@@ -780,7 +856,11 @@ function makePool(size, buildMesh) {
     const mesh = buildMesh();
     mesh.visible = false;
     scene.add(mesh);
-    items.push({ mesh, active: false, vel: new THREE.Vector3(), damage: 0, life: 0 });
+    // near/grazed: グレイズ判定用。至近を通ったか / もう数えたか(1発で何度も溜まらないように)
+    items.push({
+      mesh, active: false, vel: new THREE.Vector3(), damage: 0, life: 0,
+      near: false, grazed: false,
+    });
   }
   return items;
 }
@@ -812,6 +892,8 @@ function spawnFromPool(pool, pos, dir, speed, damage) {
     b.vel.copy(dir).multiplyScalar(speed);
     b.damage = damage;
     b.life = 6;
+    b.near = false;
+    b.grazed = false;
     if (pool === arrowPool) {
       b.mesh.lookAt(pos.clone().add(dir));
       b.mesh.rotateX(Math.PI / 2);
@@ -829,6 +911,96 @@ function deactivate(b) {
 function clearPool(pool) { pool.forEach(deactivate); }
 
 // =====================================================================
+// グレイズ・バースト
+// =====================================================================
+// 敵弾を「当たらないギリギリ」で通すとゲージが溜まり、満タンでバーストを撃てる。
+// 判定そのものは updateProjectiles() の敵弾ループと updateLaser() に組み込んであり
+// (当たり判定のループは増やさない)、ここには「成立したら何が起きるか」だけを置く。
+const graze = {
+  gauge: 0,          // 0 〜 CONFIG.graze.gaugeMax
+  burstTimer: 0,     // >0 の間はバースト効果(攻撃速度アップ)が続いている
+};
+
+const burstReady = () => graze.gauge >= CONFIG.graze.gaugeMax;
+
+// グレイズ成立時に一瞬出す白いリング(バースト発動の光にも使い回す)
+const grazeFxPool = (function () {
+  const geo = new THREE.RingGeometry(0.62, 0.78, 28);
+  const items = [];
+  for (let i = 0; i < CONFIG.graze.fxCount; i++) {
+    const mesh = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({
+      color: 0xffffff, transparent: true, opacity: 0,
+      side: THREE.DoubleSide, depthWrite: false,
+    }));
+    mesh.rotation.x = -Math.PI / 2;
+    mesh.position.y = 0.06;
+    mesh.visible = false;
+    scene.add(mesh);
+    items.push({ mesh, life: 0, mul: 1 });
+  }
+  return items;
+})();
+
+function spawnGrazeFx(x, z, mul, color) {
+  for (const fx of grazeFxPool) {
+    if (fx.life > 0) continue;
+    fx.life = CONFIG.graze.fxDuration;
+    fx.mul = mul;
+    fx.mesh.visible = true;
+    fx.mesh.position.set(x, 0.06, z);
+    fx.mesh.material.color.setHex(color);
+    fx.mesh.material.opacity = 0.9;
+    fx.mesh.scale.setScalar(CONFIG.graze.fxStartScale * mul);
+    return;
+  }
+}
+
+function updateGrazeFx(dt) {
+  const g = CONFIG.graze;
+  for (const fx of grazeFxPool) {
+    if (fx.life <= 0) continue;
+    fx.life -= dt;
+    if (fx.life <= 0) { fx.mesh.visible = false; continue; }
+    const t = 1 - fx.life / g.fxDuration;                       // 0 → 1
+    fx.mesh.scale.setScalar((g.fxStartScale + (g.fxEndScale - g.fxStartScale) * t) * fx.mul);
+    fx.mesh.material.opacity = (1 - t) * 0.9;
+  }
+}
+
+// グレイズ成立(敵弾・レーザーの判定側から呼ぶ)
+function onGraze() {
+  graze.gauge = Math.min(CONFIG.graze.gaugeMax, graze.gauge + CONFIG.graze.gain);
+  const p = player.mesh.position;
+  spawnGrazeFx(p.x, p.z, 1, 0xffffff);
+  updateGrazeHud();
+}
+
+// バースト発動: 敵弾を全消去 + 全方位射撃 + 一定時間だけ攻撃速度アップ
+function tryBurst() {
+  if (state.phase !== 'playing' || !burstReady()) return;
+  const b = CONFIG.burst;
+  graze.gauge = 0;
+  graze.burstTimer = b.duration;
+  clearPool(bulletPool);
+  const origin = player.mesh.position.clone();
+  origin.y = 0.95;
+  for (let i = 0; i < b.shots; i++) {
+    const a = (i / b.shots) * Math.PI * 2;
+    const dir = new THREE.Vector3(Math.cos(a), 0, Math.sin(a));
+    spawnFromPool(arrowPool, origin, dir, b.shotSpeed, b.shotDamage);
+  }
+  spawnGrazeFx(origin.x, origin.z, b.fxScale, 0xffd76a);
+  updateGrazeHud();
+}
+
+function resetGraze() {
+  graze.gauge = 0;
+  graze.burstTimer = 0;
+  for (const fx of grazeFxPool) { fx.life = 0; fx.mesh.visible = false; }
+  updateGrazeHud();
+}
+
+// =====================================================================
 // 敵
 // =====================================================================
 const enemies = [];
@@ -844,6 +1016,100 @@ function makeTelegraphRing() {
   ring.visible = false;
   scene.add(ring);
   return ring;
+}
+
+// --- テレグラフレーザー ---
+// 地面に寝かせた 1x1 の面を「原点から dir 方向へ length だけ伸びる帯」として使う。
+// ジオメトリを +Y 側へずらしてあるので、位置＝発射点・scale.y＝長さ・rotation.z＝向きで置ける
+const laserGeo = new THREE.PlaneGeometry(1, 1).translate(0, 0.5, 0);
+function makeLaserMesh(color, opacity, y) {
+  const m = new THREE.Mesh(laserGeo, new THREE.MeshBasicMaterial({
+    color, transparent: true, opacity, side: THREE.DoubleSide, depthWrite: false,
+  }));
+  m.rotation.x = -Math.PI / 2;      // 地面に寝かせる(この後 rotation.z で面内を回す)
+  m.position.y = y;
+  m.visible = false;
+  scene.add(m);
+  return m;
+}
+function makeLaserFx() {
+  return {
+    guide: makeLaserMesh(0xff3344, 0.5, 0.07),   // 予兆の細い赤線
+    beam: makeLaserMesh(0xff2a55, 0.7, 0.08),    // 本体
+    core: makeLaserMesh(0xfff0f4, 0.95, 0.09),   // 芯の白
+  };
+}
+// rotation.x = -90° の面では、ローカル +Y は回転後に (-sinθ, 0, -cosθ) を向く
+function orientLaser(mesh, origin, dir, width, length) {
+  mesh.position.set(origin.x, mesh.position.y, origin.z);
+  mesh.rotation.z = Math.atan2(-dir.x, -dir.z);
+  mesh.scale.set(width, length, 1);
+}
+// 点とレーザー中心線(線分)の距離
+function laserDistance(enemy, px, pz) {
+  const o = enemy.laserOrigin, d = enemy.laserDir;
+  const t = clamp((px - o.x) * d.x + (pz - o.z) * d.z, 0, enemy.def.laser.length);
+  return Math.hypot(o.x + d.x * t - px, o.z + d.z * t - pz);
+}
+
+// 予兆 → 発射 → 待機のサイクル。当たり・グレイズ判定もここで見る(別ループは作らない)
+function updateLaser(enemy, dt) {
+  const L = enemy.def.laser;
+  const fx = enemy.laserFx;
+
+  if (enemy.laserPhase === 'telegraph') {
+    enemy.laserT += dt;
+    fx.guide.material.opacity = 0.35 + 0.35 * Math.sin(state.time * 26);
+    if (enemy.laserT >= L.telegraph) {
+      // 予兆時の角度・発射点のまま撃つ(以後は追尾しない)
+      enemy.laserPhase = 'fire';
+      enemy.laserT = 0;
+      enemy.laserGrazed = false;
+      fx.guide.visible = false;
+      orientLaser(fx.beam, enemy.laserOrigin, enemy.laserDir, L.beamWidth, L.length);
+      orientLaser(fx.core, enemy.laserOrigin, enemy.laserDir, L.beamWidth * 0.3, L.length);
+      fx.beam.visible = fx.core.visible = true;
+    }
+    return;
+  }
+
+  if (enemy.laserPhase === 'fire') {
+    enemy.laserT += dt;
+    const k = 1 - enemy.laserT / L.duration;                    // 1 → 0
+    fx.beam.scale.x = L.beamWidth * (0.6 + 0.4 * k);
+    fx.beam.material.opacity = 0.15 + 0.65 * k;
+    fx.core.material.opacity = 0.95 * k;
+
+    const pp = player.mesh.position;
+    const d = laserDistance(enemy, pp.x, pp.z);
+    const half = L.beamWidth / 2;
+    if (d < half + CONFIG.player.radius) {
+      damagePlayer(L.damage);
+    } else if (!enemy.laserGrazed && d < half + CONFIG.graze.outerRadius) {
+      enemy.laserGrazed = true;                                 // 1本のレーザーにつき1回だけ
+      onGraze();
+    }
+
+    if (enemy.laserT >= L.duration) {
+      enemy.laserPhase = null;
+      enemy.laserTimer = L.interval;
+      fx.beam.visible = fx.core.visible = false;
+    }
+    return;
+  }
+
+  enemy.laserTimer -= dt;
+  if (enemy.laserTimer > 0) return;
+  enemy.laserOrigin.copy(enemy.mesh.position);
+  enemy.laserOrigin.y = 0;
+  enemy.laserDir.subVectors(player.mesh.position, enemy.laserOrigin);
+  enemy.laserDir.y = 0;
+  if (enemy.laserDir.lengthSq() < 1e-6) enemy.laserDir.set(0, 0, 1);
+  enemy.laserDir.normalize();
+  enemy.laserPhase = 'telegraph';
+  enemy.laserT = 0;
+  orientLaser(fx.guide, enemy.laserOrigin, enemy.laserDir, L.guideWidth, L.length);
+  fx.guide.visible = true;
 }
 
 function buildEnemyMesh(def, isBoss) {
@@ -874,6 +1140,7 @@ function spawnEnemy(typeName, waveNum) {
   scene.add(mesh);
 
   const hp = def.hp + (isBoss ? (def.hpPerWave || 0) * (waveNum / CONFIG.wave.bossEvery - 1) : 0);
+  const useLaser = !!def.laser && waveNum >= def.laser.fromWave;
   const enemy = {
     type: typeName, def, mesh,
     hp, maxHp: hp,
@@ -881,6 +1148,14 @@ function spawnEnemy(typeName, waveNum) {
     telegraphTimer: -1,             // >=0 の間は予兆中
     telegraphRing: def.attack && def.attack.telegraph ? makeTelegraphRing() : null,
     strafeDir: Math.random() < 0.5 ? 1 : -1,
+    // テレグラフレーザー(使わない敵は laserFx が null)
+    laserFx: useLaser ? makeLaserFx() : null,
+    laserPhase: null,               // null | 'telegraph' | 'fire'
+    laserT: 0,
+    laserTimer: useLaser ? def.laser.interval * (0.5 + Math.random() * 0.5) : 0,
+    laserOrigin: new THREE.Vector3(),
+    laserDir: new THREE.Vector3(0, 0, 1),
+    laserGrazed: false,
   };
   enemies.push(enemy);
   return enemy;
@@ -889,6 +1164,14 @@ function spawnEnemy(typeName, waveNum) {
 function removeEnemy(enemy) {
   scene.remove(enemy.mesh);
   if (enemy.telegraphRing) scene.remove(enemy.telegraphRing);
+  if (enemy.laserFx) {
+    // ジオメトリは共有なのでマテリアルだけ捨てる
+    for (const m of [enemy.laserFx.guide, enemy.laserFx.beam, enemy.laserFx.core]) {
+      scene.remove(m);
+      m.material.dispose();
+    }
+    enemy.laserFx = null;
+  }
   const i = enemies.indexOf(enemy);
   if (i >= 0) enemies.splice(i, 1);
 }
@@ -934,6 +1217,8 @@ function updateEnemy(enemy, dt) {
   } else if (def.behavior === 'boss') {
     if (enemy.telegraphTimer < 0) moveVec = toPlayer; // 予兆中は停止
   }
+  // レーザー中は足を止める(発射点も角度も固定なので、動くと線と実際のビームがずれる)
+  if (enemy.laserPhase) moveVec = null;
   if (moveVec) {
     pos.addScaledVector(moveVec, def.speed * dt);
     const h = CONFIG.arena.half - def.radius;
@@ -969,6 +1254,7 @@ function updateEnemy(enemy, dt) {
       }
     }
   }
+  if (enemy.laserFx) updateLaser(enemy, dt);
 
   // --- 接触ダメージ ---
   if (dist < def.radius + CONFIG.player.radius) {
@@ -1013,8 +1299,23 @@ function onWaveClear() {
 const input = { x: 0, z: 0 };
 const keys = {};
 
-window.addEventListener('keydown', (e) => { keys[e.code] = true; });
+window.addEventListener('keydown', (e) => {
+  keys[e.code] = true;
+  if (e.code === 'Space') {           // Space でバースト(ページのスクロールは止める)
+    e.preventDefault();
+    if (!e.repeat) tryBurst();
+  }
+});
 window.addEventListener('keyup', (e) => { keys[e.code] = false; });
+
+// バーストボタン(ゲージ満タンのときだけ updateGrazeHud() が表示する)。
+// canvas より上に居るので、押してもジョイスティックは出ない
+const burstBtn = document.getElementById('burst-btn');
+burstBtn.addEventListener('touchstart', (e) => {
+  e.preventDefault();                 // touchstart を止めると click は来ないので二重発動しない
+  tryBurst();
+}, { passive: false });
+burstBtn.addEventListener('click', tryBurst);
 
 const joyEl = document.getElementById('joystick');
 const joyKnob = document.getElementById('joy-knob');
@@ -1109,6 +1410,7 @@ function nearestEnemy() {
 
 function updatePlayer(dt) {
   readInput();
+  if (graze.burstTimer > 0) graze.burstTimer = Math.max(0, graze.burstTimer - dt);
   const moving = Math.hypot(input.x, input.z) > 0.05;
   player.moving = moving;
   const pos = player.mesh.position;
@@ -1128,7 +1430,9 @@ function updatePlayer(dt) {
       player.mesh.lookAt(target.mesh.position.x, 0, target.mesh.position.z);
       player.fireTimer -= dt;
       if (player.fireTimer <= 0) {
-        player.fireTimer = CONFIG.player.fireInterval;
+        // バースト中は攻撃速度アップ
+        const rate = graze.burstTimer > 0 ? CONFIG.burst.fireRateMul : 1;
+        player.fireTimer = CONFIG.player.fireInterval / rate;
         const dir = new THREE.Vector3()
           .subVectors(target.mesh.position, pos);
         dir.y = 0; dir.normalize();
@@ -1169,8 +1473,10 @@ function updateProjectiles(dt) {
       }
     }
   }
-  // 敵弾 → プレイヤー
+  // 敵弾 → プレイヤー(被弾判定とグレイズ判定を同じループで見る)
   const pr = CONFIG.player.radius + 0.22;
+  const gzIn = CONFIG.graze.innerRadius * CONFIG.graze.innerRadius;
+  const gzOut = CONFIG.graze.outerRadius * CONFIG.graze.outerRadius;
   for (const b of bulletPool) {
     if (!b.active) continue;
     b.mesh.position.addScaledVector(b.vel, dt);
@@ -1179,9 +1485,18 @@ function updateProjectiles(dt) {
     if (b.life <= 0 || Math.abs(p.x) > h || Math.abs(p.z) > h) { deactivate(b); continue; }
     const pp = player.mesh.position;
     const dx = p.x - pp.x, dz = p.z - pp.z;
-    if (dx * dx + dz * dz < pr * pr) {
+    const d2 = dx * dx + dz * dz;
+    if (d2 < pr * pr) {
       deactivate(b);
       damagePlayer(b.damage);
+      continue;
+    }
+    // グレイズ: 至近まで寄って(near)、当たらずに抜けた瞬間に成立。
+    // 当たった弾はここに来る前に deactivate されるので、被弾がグレイズを兼ねることはない。
+    // grazed フラグで1発につき1回だけ数える
+    if (!b.grazed) {
+      if (d2 >= gzIn && d2 <= gzOut) b.near = true;
+      else if (b.near) { b.grazed = true; onGraze(); }
     }
   }
 }
@@ -1209,6 +1524,7 @@ function animate() {
     updatePlayer(dt);
     for (let i = enemies.length - 1; i >= 0; i--) updateEnemy(enemies[i], dt);
     updateProjectiles(dt);
+    updateGrazeFx(dt);
   }
   updateCamera(dt);
   renderer.render(scene, camera);
@@ -1220,6 +1536,8 @@ function animate() {
 const hudEl = document.getElementById('hud');
 const hpBar = document.getElementById('hp-bar-inner');
 const hpLabel = document.getElementById('hp-label');
+const grazeBar = document.getElementById('graze-bar-inner');
+const grazeLabel = document.getElementById('graze-label');
 const waveLabel = document.getElementById('wave-label');
 const scoreLabel = document.getElementById('score-label');
 const waveBanner = document.getElementById('wave-banner');
@@ -1236,6 +1554,19 @@ function updateHud() {
   hpLabel.textContent = 'HP ' + Math.ceil(player.hp) + ' / ' + CONFIG.player.maxHp;
   waveLabel.textContent = 'WAVE ' + state.wave;
   scoreLabel.textContent = 'SCORE ' + state.score;
+  updateGrazeHud();
+}
+
+// グレイズゲージ。満タンなら金色に点滅し、バーストボタンを出す
+function updateGrazeHud() {
+  const ready = burstReady();
+  grazeBar.style.width = (graze.gauge / CONFIG.graze.gaugeMax * 100) + '%';
+  grazeBar.classList.toggle('full', ready);
+  grazeLabel.classList.toggle('full', ready);
+  grazeLabel.textContent = ready
+    ? 'BURST READY!  SPACE'
+    : 'GRAZE ' + Math.floor(graze.gauge) + ' / ' + CONFIG.graze.gaugeMax;
+  burstBtn.style.display = ready && state.phase === 'playing' ? 'block' : 'none';
 }
 
 let bannerTimeout = null;
@@ -1253,6 +1584,7 @@ function startGame() {
   resetPlayer();
   state.score = 0;
   state.phase = 'playing';
+  resetGraze();
   titleScreen.style.display = 'none';
   gameoverScreen.style.display = 'none';
   hudEl.style.display = 'block';
@@ -1264,6 +1596,7 @@ function gameOver() {
   goStats.innerHTML = 'WAVE ' + state.wave + ' 到達<br>SCORE ' + state.score;
   gameoverScreen.style.display = 'flex';
   hudEl.style.display = 'none';
+  updateGrazeHud();                  // バーストボタンを隠す
   joyEnd();
 }
 
