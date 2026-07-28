@@ -331,44 +331,326 @@ window.addEventListener('resize', () => {
 // プレイヤー
 // =====================================================================
 const player = {
-  mesh: null, aimHelper: null,
+  mesh: null,
   hp: CONFIG.player.maxHp,
   fireTimer: 0,
   invincible: 0,
   moving: false,
+  aiming: false,                    // 停止中に敵へ狙いを付けている
+  parts: null,                      // 人型モデルの可動パーツ(アニメーション用)
+  // run: 走り位相 / runW: 走りポーズの重み / aim: 構えポーズの重み / draw: 弓を引いた量
+  anim: { run: 0, runW: 0, aim: 0, draw: 0, idle: 0 },
 };
 
+// キャラクターの配色(見た目を変えるときはここだけ触る)
+// 俯瞰視点だと小さく映るので、上から見える面(肩・兜・足元リング)を明るめにしている
+const HERO = {
+  armor: 0x3b4775,        // 主装甲(スチールブルー)
+  armorLight: 0x8fa2d8,   // 副装甲・縁
+  cloth: 0x232c47,        // インナー
+  skin: 0xf0c49c,
+  accent: 0x5dffcf,       // 発光アクセント(バイザー・コア・弓弦)
+  cape: 0x18a0a0,
+  bow: 0xe8c273,
+};
+
+// プレイヤーは +Z が正面(rotation.y / lookAt がその向きを作る)
 (function buildPlayer() {
+  const P = {};
   const group = new THREE.Group();
-  const body = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.45, 0.55, 1.3, 10),
-    new THREE.MeshLambertMaterial({ color: 0x44dd88 })
+
+  // ハイライトが小さく強く出ると俯瞰で「白い塊」に見えるので、光沢は控えめにする
+  const matArmor = new THREE.MeshPhongMaterial({
+    color: HERO.armor, shininess: 18, specular: 0x3d4a6b, emissive: 0x0d1730,
+  });
+  const matEdge = new THREE.MeshPhongMaterial({
+    color: HERO.armorLight, shininess: 16, specular: 0x445068, emissive: 0x1a2340,
+  });
+  const matCloth = new THREE.MeshPhongMaterial({ color: HERO.cloth, shininess: 8 });
+  const matSkin = new THREE.MeshPhongMaterial({ color: HERO.skin, shininess: 6 });
+  const matCape = new THREE.MeshPhongMaterial({ color: HERO.cape, shininess: 12, emissive: 0x073034 });
+  const matBow = new THREE.MeshPhongMaterial({ color: HERO.bow, shininess: 60, specular: 0xc8a878 });
+  const matGlow = new THREE.MeshBasicMaterial({ color: HERO.accent });
+
+  const box = (w, h, d) => new THREE.BoxGeometry(w, h, d);
+  const put = (geo, mat, x, y, z) => {
+    const m = new THREE.Mesh(geo, mat);
+    m.position.set(x, y, z);
+    return m;
+  };
+
+  // 足元の影と発光リング(俯瞰視点で自機位置を掴みやすくする)
+  const shadow = new THREE.Mesh(
+    new THREE.CircleGeometry(0.6, 20),
+    new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.35 })
   );
-  body.position.y = 0.75;
-  group.add(body);
-  const head = new THREE.Mesh(
-    new THREE.SphereGeometry(0.35, 12, 10),
-    new THREE.MeshLambertMaterial({ color: 0xffe0b0 })
+  shadow.rotation.x = -Math.PI / 2;
+  shadow.position.y = 0.02;
+  group.add(shadow);
+  const ring = new THREE.Mesh(
+    new THREE.RingGeometry(0.62, 0.78, 32, 1, 0, Math.PI * 1.7),
+    new THREE.MeshBasicMaterial({
+      color: HERO.accent, transparent: true, opacity: 0.5, side: THREE.DoubleSide,
+    })
   );
-  head.position.y = 1.65;
-  group.add(head);
-  // 弓(向きの目印)
-  const bow = new THREE.Mesh(
-    new THREE.TorusGeometry(0.45, 0.05, 6, 16, Math.PI),
-    new THREE.MeshLambertMaterial({ color: 0xcc8833 })
+  ring.rotation.x = -Math.PI / 2;
+  ring.position.y = 0.03;
+  group.add(ring);
+  P.ring = ring;
+
+  // 上下動・前傾を受け持つルート
+  const root = new THREE.Group();
+  group.add(root);
+  P.root = root;
+
+  // ---- 脚(side: -1 左 / +1 右)----
+  function buildLeg(side) {
+    const hip = new THREE.Group();
+    hip.position.set(0.17 * side, 0.9, 0);
+    root.add(hip);
+    hip.add(put(box(0.24, 0.5, 0.26), matCloth, 0, -0.25, 0));       // 腿
+    const knee = new THREE.Group();
+    knee.position.y = -0.5;
+    hip.add(knee);
+    knee.add(put(box(0.22, 0.44, 0.24), matArmor, 0, -0.22, 0));     // 脛当て
+    knee.add(put(box(0.26, 0.12, 0.1), matEdge, 0, -0.06, 0.11));    // 膝アーマー
+    knee.add(put(box(0.26, 0.15, 0.4), matEdge, 0, -0.47, 0.07));    // ブーツ
+    return { hip, knee };
+  }
+  P.legL = buildLeg(-1);
+  P.legR = buildLeg(1);
+
+  // ---- 胴 ----
+  const torso = new THREE.Group();
+  torso.position.y = 0.9;
+  root.add(torso);
+  P.torso = torso;
+
+  torso.add(put(box(0.5, 0.18, 0.3), matEdge, 0, 0.04, 0));          // 腰アーマー
+  const chest = put(new THREE.CylinderGeometry(0.33, 0.25, 0.52, 6), matArmor, 0, 0.4, 0);
+  chest.rotation.y = Math.PI / 6;                                     // 正面を平らな面にする
+  torso.add(chest);
+  torso.add(put(box(0.36, 0.22, 0.06), matEdge, 0, 0.48, 0.26));     // 胸プレート
+  torso.add(put(new THREE.OctahedronGeometry(0.1), matGlow, 0, 0.44, 0.29)); // エナジーコア
+  const coreLight = new THREE.PointLight(HERO.accent, 0.75, 4.5);
+  coreLight.position.set(0, 0.5, 0.15);
+  torso.add(coreLight);
+
+  // 背中の矢筒
+  const quiver = put(new THREE.CylinderGeometry(0.1, 0.085, 0.52, 6), matCloth, -0.2, 0.55, -0.2);
+  quiver.rotation.set(0.3, 0, -0.35);
+  torso.add(quiver);
+  for (let i = 0; i < 3; i++) {
+    const f = put(new THREE.ConeGeometry(0.05, 0.16, 4), matGlow, -0.26 + i * 0.045, 0.86, -0.24);
+    f.rotation.set(0.3, 0, -0.35);
+    torso.add(f);
+  }
+
+  // ---- 腕(左手に弓、右手で弦を引く)----
+  function buildArm(side) {
+    const shoulder = new THREE.Group();
+    shoulder.position.set(0.38 * side, 0.6, 0);
+    torso.add(shoulder);
+    // 肩アーマー: 俯瞰でいちばん目立つのでアクセントを載せる
+    const pauldron = put(
+      new THREE.SphereGeometry(0.17, 8, 5, 0, Math.PI * 2, 0, Math.PI / 2),
+      matEdge, 0.04 * side, 0.04, 0
+    );
+    pauldron.scale.set(1.15, 0.8, 1.3);
+    shoulder.add(pauldron);
+    shoulder.add(put(box(0.22, 0.035, 0.12), matGlow, 0.04 * side, 0.13, 0.04));
+    shoulder.add(put(box(0.16, 0.34, 0.17), matCloth, 0, -0.19, 0));  // 上腕
+    const elbow = new THREE.Group();
+    elbow.position.y = -0.36;
+    shoulder.add(elbow);
+    elbow.add(put(box(0.15, 0.32, 0.15), matArmor, 0, -0.16, 0));     // 前腕
+    elbow.add(put(box(0.18, 0.1, 0.19), matEdge, 0, -0.3, 0.01));     // 手甲
+    const hand = new THREE.Group();
+    hand.position.y = -0.38;
+    elbow.add(hand);
+    return { shoulder, elbow, hand };
+  }
+  P.armL = buildArm(-1);
+  P.armR = buildArm(1);
+
+  // ---- 弓(左手に保持。弧の中心が +Z=正面、弦は手前側)----
+  (function buildBow(hand) {
+    const R = 0.44, arc = Math.PI * 1.15;
+    // pivot は毎フレーム姿勢を打ち消して弓を常に正面・直立に保つ(下の updateBowPose)
+    const pivot = new THREE.Group();
+    hand.add(pivot);
+    const bow = new THREE.Group();
+    bow.position.set(0, -0.02, -(R - 0.16));   // グリップあたりが手に来る位置へ後ろ倒し
+    pivot.add(bow);
+    P.bowPivot = pivot;
+
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(R, 0.035, 6, 24, arc), matBow);
+    ring.rotation.z = -arc / 2;                // 弧の中心を +X へ
+    const holder = new THREE.Group();
+    holder.rotation.y = -Math.PI / 2;          // その +X を +Z(正面)へ倒す
+    holder.add(ring);
+    bow.add(holder);
+    bow.add(put(box(0.09, 0.28, 0.11), matEdge, 0, 0, R - 0.02));   // グリップ
+    bow.add(put(box(0.05, 0.1, 0.16), matGlow, 0, 0.17, R - 0.03)); // 発光サイト
+
+    // 弦: 上下 2 本に分け、引き量に応じて V 字に折る
+    const tipY = R * Math.sin(arc / 2), tipZ = R * Math.cos(arc / 2);
+    const segGeo = new THREE.CylinderGeometry(0.012, 0.012, 1, 4);
+    const strMat = new THREE.MeshBasicMaterial({ color: 0xdff5ff });
+    const up = new THREE.Mesh(segGeo, strMat);
+    const dn = new THREE.Mesh(segGeo, strMat);
+    bow.add(up, dn);
+
+    // 番えた矢(引いている間だけ表示)
+    const nock = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.75, 4), matGlow);
+    nock.rotation.x = Math.PI / 2;
+    nock.visible = false;
+    bow.add(nock);
+
+    P.bow = bow;
+    P.string = { up, dn, tipY, tipZ, nock };
+  })(P.armL.hand);
+
+  // ---- マント(3 節のヒンジで揺らす)----
+  const capeDims = [[0.6, 0.42], [0.54, 0.42], [0.42, 0.36]];
+  P.cape = [];
+  let capeParent = torso;
+  capeDims.forEach(([w, h], i) => {
+    const seg = new THREE.Group();
+    seg.position.set(0, i === 0 ? 0.62 : -capeDims[i - 1][1], i === 0 ? -0.22 : 0);
+    capeParent.add(seg);
+    seg.add(put(box(w, h, 0.05), matCape, 0, -h / 2, 0));
+    if (i === capeDims.length - 1) seg.add(put(box(w, 0.04, 0.06), matGlow, 0, -h, 0));
+    P.cape.push(seg);
+    capeParent = seg;
+  });
+
+  // ---- 頭部 ----
+  const head = new THREE.Group();
+  head.position.y = 0.68;
+  torso.add(head);
+  P.head = head;
+  head.add(put(new THREE.CylinderGeometry(0.09, 0.11, 0.12, 6), matCloth, 0, 0.05, 0)); // 首
+  head.add(put(box(0.23, 0.17, 0.23), matSkin, 0, 0.2, 0));                            // 口元
+  const helm = new THREE.Mesh(
+    new THREE.SphereGeometry(0.2, 12, 8, 0, Math.PI * 2, 0, Math.PI * 0.62), matArmor
   );
-  bow.position.set(0, 1.0, -0.6);
-  bow.rotation.set(0, 0, Math.PI / 2);
-  group.add(bow);
+  helm.position.y = 0.25;
+  helm.scale.set(1.08, 1.2, 1.12);
+  head.add(helm);
+  head.add(put(box(0.27, 0.055, 0.06), matGlow, 0, 0.245, 0.18));   // バイザー
+  head.add(put(box(0.06, 0.14, 0.46), matEdge, 0, 0.36, 0.0));      // クレスト(俯瞰で向きが分かる)
+  head.add(put(box(0.035, 0.05, 0.34), matGlow, 0, 0.44, 0.02));
+  for (const dx of [-0.07, 0.07]) {                                  // 後ろへ流れる光の房
+    const strand = put(box(0.06, 0.32, 0.07), matGlow, dx, 0.16, -0.24);
+    strand.rotation.x = -0.75;
+    head.add(strand);
+  }
+
   scene.add(group);
   player.mesh = group;
+  player.parts = P;
 })();
+
+// 弓の姿勢: 腕の振りをキャンセルし、常に「直立・キャラの正面向き」に保つ。
+// 弓はローカルで +Z が射出方向なので、これで見た目の向きと矢の飛ぶ向きが一致する。
+const _qHand = new THREE.Quaternion();
+const _qBody = new THREE.Quaternion();
+const _qTilt = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, 0, 0.14));
+function updateBowPose() {
+  const pivot = player.parts.bowPivot;
+  pivot.parent.getWorldQuaternion(_qHand);
+  player.mesh.getWorldQuaternion(_qBody);
+  pivot.quaternion.copy(_qHand).invert().multiply(_qBody).multiply(_qTilt);
+}
+
+// 弦と番え矢: 引き手(右手)の実座標に合わせて張るので、腕のポーズと必ず繋がる
+const _nock = new THREE.Vector3();
+const _seg = new THREE.Vector3();
+const _axisY = new THREE.Vector3(0, 1, 0);
+const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+function updateBowString() {
+  const P = player.parts, s = P.string, bow = P.bow;
+  bow.updateWorldMatrix(true, false);
+  P.armR.hand.getWorldPosition(_nock);
+  bow.worldToLocal(_nock);
+  _nock.x = clamp(_nock.x, -0.12, 0.12);
+  _nock.y = clamp(_nock.y, -0.24, 0.24);
+  _nock.z = Math.min(_nock.z, s.tipZ);
+  for (const [m, ty] of [[s.up, s.tipY], [s.dn, -s.tipY]]) {
+    _seg.set(_nock.x, _nock.y - ty, _nock.z - s.tipZ);
+    const len = _seg.length() || 0.001;
+    m.position.set(_nock.x / 2, (ty + _nock.y) / 2, (s.tipZ + _nock.z) / 2);
+    m.quaternion.setFromUnitVectors(_axisY, _seg.divideScalar(len));
+    m.scale.y = len;
+  }
+  s.nock.visible = s.tipZ - _nock.z > 0.06;
+  s.nock.position.set(_nock.x * 0.6, _nock.y * 0.6, _nock.z + 0.38);
+}
+
+// 走り・構え・マントのアニメーション
+function updatePlayerAnimation(dt) {
+  const P = player.parts, A = player.anim;
+  A.idle += dt;
+  A.runW += ((player.moving ? 1 : 0) - A.runW) * Math.min(1, dt * 12);
+  A.aim += ((player.aiming ? 1 : 0) - A.aim) * Math.min(1, dt * 12);
+  A.draw += ((player.aiming ? 1 : 0) - A.draw) * Math.min(1, dt * 9);
+  if (player.moving) A.run = (A.run + dt * 11) % (Math.PI * 2);
+
+  const w = A.runW, aim = A.aim;
+  const s = Math.sin(A.run);
+
+  // 脚: 前後スイング + 後ろ側だけ膝を曲げる
+  P.legL.hip.rotation.x = s * 0.85 * w;
+  P.legR.hip.rotation.x = -s * 0.85 * w;
+  P.legL.knee.rotation.x = (0.1 + Math.max(0, -s) * 0.95) * w;
+  P.legR.knee.rotation.x = (0.1 + Math.max(0, s) * 0.95) * w;
+
+  // 腕: 走りの振りと構えポーズをブレンド
+  // 弓手(armL)は走行中も前に構えたまま。射手(armR)は肘の曲げだけで弦を引く
+  const rest = 1 - aim;
+  P.armL.shoulder.rotation.x = (-0.5 - s * 0.3 * w) * rest + (-1.5) * aim;
+  P.armL.shoulder.rotation.z = -0.12 * rest + 0.3 * aim;
+  P.armL.elbow.rotation.x = (0.55 + Math.max(0, s) * 0.25 * w) * rest + 0.08 * aim;
+  P.armR.shoulder.rotation.x = (s * 0.6 * w) * rest + (-1.15) * aim;
+  P.armR.shoulder.rotation.z = 0.12 * rest + 0.4 * aim;
+  P.armR.elbow.rotation.x = (0.3 + Math.max(0, -s) * 0.4 * w) * rest + (0.45 + 1.7 * A.draw) * aim;
+
+  // 体幹: 走りは前傾+上下動、構えは半身
+  P.root.rotation.x = 0.13 * w;
+  P.root.position.y = Math.abs(s) * 0.055 * w + Math.sin(A.idle * 2.2) * 0.012 * (1 - w);
+  P.torso.rotation.y = -0.18 * aim;
+  P.torso.rotation.z = s * 0.05 * w;
+  P.head.rotation.y = 0.18 * aim;
+  P.head.rotation.x = -0.1 * w;
+
+  // マント: 走ると後ろへなびき、静止時はゆっくり揺れる
+  // 節は入れ子なので角度は累積する。全体で 70 度ほどに収まる配分にしている
+  const wave = [0.35, 0.22, 0.16];
+  P.cape.forEach((seg, i) => {
+    const t = A.idle * 5.5 - i * 0.7;
+    const target = 0.06 + wave[i] * w + Math.sin(t) * (0.04 + 0.03 * i) * (0.4 + w);
+    seg.rotation.x += (target - seg.rotation.x) * Math.min(1, dt * 8);
+  });
+
+  // 足元リングはゆっくり回し、構え中は少し強く光らせる
+  P.ring.rotation.z -= dt * 0.9;
+  P.ring.material.opacity = 0.38 + 0.22 * aim;
+
+  updateBowPose();
+  updateBowString();
+}
 
 function resetPlayer() {
   player.mesh.position.set(0, 0, 0);
+  player.mesh.rotation.y = 0;
   player.hp = CONFIG.player.maxHp;
   player.fireTimer = 0;
   player.invincible = 0;
+  player.moving = false;
+  player.aiming = false;
+  Object.assign(player.anim, { run: 0, runW: 0, aim: 0, draw: 0, idle: 0 });
+  updatePlayerAnimation(0);
 }
 
 function damagePlayer(amount) {
@@ -743,11 +1025,14 @@ function updatePlayer(dt) {
         const dir = new THREE.Vector3()
           .subVectors(target.mesh.position, pos);
         dir.y = 0; dir.normalize();
-        const origin = pos.clone(); origin.y = 1.0;
+        const origin = pos.clone(); origin.y = 1.15;   // 弓を構える高さ
         spawnFromPool(arrowPool, origin, dir, CONFIG.player.arrowSpeed, CONFIG.player.arrowDamage);
+        player.anim.draw = 0;                          // 弦を放つ
       }
     }
+    player.aiming = !!target;
   }
+  if (moving) player.aiming = false;
 
   if (player.invincible > 0) {
     player.invincible -= dt;
@@ -755,6 +1040,8 @@ function updatePlayer(dt) {
   } else {
     player.mesh.visible = true;
   }
+
+  updatePlayerAnimation(dt);
 }
 
 function updateProjectiles(dt) {
