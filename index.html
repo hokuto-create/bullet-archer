@@ -63,6 +63,52 @@
   #graze-label { font-size: 11px; color: #bcdcf5; margin-top: 2px; text-shadow: 0 1px 2px #000; }
   #graze-label.full { color: #ffd76a; font-weight: bold; }
 
+  /* ---- 経験値バー(グレイズゲージの下)---- */
+  #exp-bar-outer {
+    width: min(46vw, 260px); height: 8px; margin-top: 6px;
+    background: rgba(255,255,255,0.12);
+    border: 1px solid rgba(255,255,255,0.35);
+    border-radius: 4px; overflow: hidden;
+  }
+  #exp-bar-inner {
+    width: 0%; height: 100%;
+    background: linear-gradient(90deg, #7ae05f, #c8f77a);
+    transition: width 0.12s;
+  }
+  #exp-label { font-size: 11px; color: #cdf0bc; margin-top: 2px; text-shadow: 0 1px 2px #000; }
+
+  /* ---- レベルアップ(スキル3択)画面 ---- */
+  #levelup-screen {
+    position: fixed; inset: 0; z-index: 9;
+    display: none; flex-direction: column;
+    align-items: center; justify-content: center;
+    background: rgba(6,8,18,0.72);
+    padding: env(safe-area-inset-top) 12px env(safe-area-inset-bottom);
+  }
+  #levelup-title {
+    font-size: clamp(28px, 7vw, 46px); font-weight: 900;
+    color: #b6ff7a; letter-spacing: 0.08em;
+    text-shadow: 0 0 22px rgba(140,255,80,0.55);
+  }
+  #levelup-sub { font-size: 14px; color: #cde; margin: 8px 0 26px; }
+  #skill-cards {
+    display: flex; flex-wrap: wrap; gap: 12px;
+    justify-content: center; max-width: 720px;
+  }
+  .skill-card {
+    width: min(200px, 29vw); min-width: 150px;
+    background: linear-gradient(180deg, rgba(40,48,88,0.95), rgba(22,26,52,0.95));
+    border: 2px solid rgba(160,190,255,0.45);
+    border-radius: 14px; padding: 16px 12px;
+    color: #fff; text-align: center; cursor: pointer;
+    font-family: inherit;
+  }
+  .skill-card:active { transform: scale(0.96); }
+  .skill-card .s-icon { font-size: 34px; line-height: 1.2; }
+  .skill-card .s-name { font-size: 15px; font-weight: bold; color: #ffd76a; margin: 8px 0 6px; }
+  .skill-card .s-desc { font-size: 12px; color: #bcd; line-height: 1.6; min-height: 3.2em; }
+  .skill-card .s-lv { font-size: 11px; color: #9fe08a; margin-top: 6px; font-weight: bold; }
+
   /* ---- バーストボタン(ゲージ満タンのときだけ出る)---- */
   #burst-btn {
     position: fixed; z-index: 6; display: none;
@@ -148,6 +194,8 @@
       <div id="hp-label">HP 100 / 100</div>
       <div id="graze-bar-outer"><div id="graze-bar-inner"></div></div>
       <div id="graze-label">GRAZE 0 / 100</div>
+      <div id="exp-bar-outer"><div id="exp-bar-inner"></div></div>
+      <div id="exp-label">Lv 1</div>
     </div>
     <div id="hud-right">
       <div id="wave-label">WAVE 1</div>
@@ -164,6 +212,12 @@
 
 <button id="burst-btn">BURST</button>
 
+<div id="levelup-screen">
+  <div id="levelup-title">LEVEL UP!</div>
+  <div id="levelup-sub">スキルを1つ選ぼう(キー: 1 / 2 / 3)</div>
+  <div id="skill-cards"></div>
+</div>
+
 <div id="title-screen" class="screen">
   <div id="title-main">BULLET ARCHER</div>
   <div id="title-sub">〜弾幕の射手〜</div>
@@ -171,7 +225,8 @@
     移動: WASD / 矢印キー / 仮想ジョイスティック<br>
     立ち止まると最寄りの敵を自動攻撃!<br>
     敵弾を<b>かすめる</b>とグレイズゲージが溜まる<br>
-    満タンで SPACE / BURST ボタン → 弾消し + 全方位射撃
+    満タンで SPACE / BURST ボタン → 弾消し + 全方位射撃<br>
+    敵を倒して経験値ゲット!レベルアップでスキルを選ぼう
   </p>
   <button id="start-btn" class="btn">START</button>
 </div>
@@ -227,6 +282,13 @@ const CONFIG = {
     shotDamage: 12,
     fxScale: 3.2,                   // 発動リングの大きさ(graze の白リングを使い回す)
   },
+  // レベル・スキル: 敵を倒すと経験値、レベルアップでスキル3択(アーチャー伝説方式)
+  level: {
+    baseExp: 30,                    // Lv1→2 に必要な経験値
+    expGrowth: 1.35,                // レベルごとの必要経験値の倍率
+    choices: 3,                     // レベルアップで提示するスキル数
+    spread: 0.16,                   // マルチショットの矢同士の角度(ラジアン)
+  },
   // 敵の頭上に出すHPバー(サイズはワールド単位。平行投影なので画面上の大きさは常に一定)
   hpBar: {
     width: 1.5, height: 0.15,       // 通常敵のバー
@@ -274,13 +336,13 @@ const ENEMY_TYPES = {
   chaser: {
     behavior: 'chase',
     hp: 30, speed: 4.2, radius: 0.7,
-    color: 0xff5544, score: 100,
+    color: 0xff5544, score: 100, exp: 8,
     touchDamage: 10,
   },
   shooter: {
     behavior: 'shoot',
     hp: 24, speed: 3.2, radius: 0.7,
-    color: 0x44aaff, score: 150,
+    color: 0x44aaff, score: 150, exp: 12,
     touchDamage: 8,
     keepDistance: 11,               // この距離を保とうとする
     attack: { pattern: 'aimed', interval: 2.2, speed: 9, damage: 8 },
@@ -300,7 +362,7 @@ const ENEMY_TYPES = {
   boss: {
     behavior: 'boss',
     hp: 320, speed: 1.8, radius: 1.5,
-    color: 0xbb44ff, score: 1000,
+    color: 0xbb44ff, score: 1000, exp: 80,
     touchDamage: 20,
     hpPerWave: 60,                  // 出現ウェーブ数に応じたHP加算
     attack: {
@@ -421,6 +483,7 @@ window.addEventListener('resize', () => {
 const player = {
   mesh: null,
   hp: CONFIG.player.maxHp,
+  maxHp: CONFIG.player.maxHp,       // バイタリティで増える(CONFIG は初期値)
   fireTimer: 0,
   invincible: 0,
   moving: false,
@@ -853,7 +916,8 @@ function updatePlayerAnimation(dt) {
 function resetPlayer() {
   player.mesh.position.set(0, 0, 0);
   player.mesh.rotation.y = 0;
-  player.hp = CONFIG.player.maxHp;
+  player.maxHp = CONFIG.player.maxHp;
+  player.hp = player.maxHp;
   player.fireTimer = 0;
   player.invincible = 0;
   player.moving = false;
@@ -883,9 +947,10 @@ function makePool(size, buildMesh) {
     mesh.visible = false;
     scene.add(mesh);
     // near/grazed: グレイズ判定用。至近を通ったか / もう数えたか(1発で何度も溜まらないように)
+    // pierce/hits: 貫通スキル用。残り貫通数 / もうヒットした敵(多重ヒット防止。Set は使い回す)
     items.push({
       mesh, active: false, vel: new THREE.Vector3(), damage: 0, life: 0,
-      near: false, grazed: false,
+      near: false, grazed: false, pierce: 0, hits: null,
     });
   }
   return items;
@@ -920,6 +985,8 @@ function spawnFromPool(pool, pos, dir, speed, damage) {
     b.life = 6;
     b.near = false;
     b.grazed = false;
+    b.pierce = 0;
+    if (b.hits) b.hits.clear();
     if (pool === arrowPool) {
       b.mesh.lookAt(pos.clone().add(dir));
       b.mesh.rotateX(Math.PI / 2);
@@ -995,7 +1062,7 @@ function updateGrazeFx(dt) {
 
 // グレイズ成立(敵弾・レーザーの判定側から呼ぶ)
 function onGraze() {
-  graze.gauge = Math.min(CONFIG.graze.gaugeMax, graze.gauge + CONFIG.graze.gain);
+  graze.gauge = Math.min(CONFIG.graze.gaugeMax, graze.gauge + CONFIG.graze.gain * level.stats.grazeMul);
   const p = player.mesh.position;
   spawnGrazeFx(p.x, p.z, 1, 0xffffff);
   updateGrazeHud();
@@ -1013,7 +1080,7 @@ function tryBurst() {
   for (let i = 0; i < b.shots; i++) {
     const a = (i / b.shots) * Math.PI * 2;
     const dir = new THREE.Vector3(Math.cos(a), 0, Math.sin(a));
-    spawnFromPool(arrowPool, origin, dir, b.shotSpeed, b.shotDamage);
+    fireArrow(origin, dir, 0, b.shotSpeed, b.shotDamage);   // 攻撃力・貫通スキルが乗る
   }
   spawnGrazeFx(origin.x, origin.z, b.fxScale, 0xffd76a);
   updateGrazeHud();
@@ -1127,6 +1194,111 @@ function updateDamageTexts(dt) {
 
 function resetDamageTexts() {
   for (const item of dmgTextPool) { item.life = 0; item.mesh.visible = false; }
+}
+
+// =====================================================================
+// レベル・スキル(アーチャー伝説方式)
+// =====================================================================
+// 敵を倒すと exp が入り、レベルアップすると 3 択からスキルを選ぶ。
+// 選択中はゲームを止める(state.phase = 'levelup'。animate() が更新を止める)。
+// スキルはデータ駆動: 追加するときは SKILLS にオブジェクトを足し、
+// 効果は recomputeSkillStats() に1行足す。効果は taken(取得回数)から毎回
+// まとめて再計算するので、取得順や重ね取りを個別に気にしなくてよい
+const SKILLS = {
+  multishot: { icon: '🏹', name: 'マルチショット', desc: '正面の矢が1本増える(扇状に発射)', max: 3 },
+  power:     { icon: '💥', name: 'パワーショット', desc: '矢の攻撃力 +25%', max: 5, value: 0.25 },
+  rapid:     { icon: '⚡', name: 'ラピッドショット', desc: '攻撃速度 +20%', max: 5, value: 0.2 },
+  boots:     { icon: '👢', name: 'スイフトブーツ', desc: '移動速度 +12%', max: 3, value: 0.12 },
+  vital:     { icon: '❤️', name: 'バイタリティ', desc: '最大HP +25(取得時に25回復)', max: 4, value: 25 },
+  pierce:    { icon: '🎯', name: '貫通の矢', desc: '矢が敵を貫通する(+1体)', max: 2 },
+  back:      { icon: '🔄', name: 'バックショット', desc: '後方にも矢を放つ', max: 1 },
+  side:      { icon: '↔️', name: 'サイドショット', desc: '左右にも矢を放つ', max: 1 },
+  grazeup:   { icon: '✨', name: 'グレイズ強化', desc: 'グレイズのゲージ増加 +50%', max: 2, value: 0.5 },
+  regen:     { icon: '🌿', name: 'リジェネ', desc: '毎秒HPが1回復する', max: 2, value: 1 },
+};
+
+const level = {
+  lv: 1,
+  exp: 0,
+  next: CONFIG.level.baseExp,       // 次のレベルまでの必要経験値
+  pending: 0,                       // 未処理のレベルアップ数(まとめて上がっても1回ずつ選ばせる)
+  taken: {},                        // skillId -> 取得回数
+  stats: null,                      // taken から求めた派生ステータス(下で初期化)
+};
+
+function recomputeSkillStats() {
+  const n = (id) => level.taken[id] || 0;
+  level.stats = {
+    damageMul: 1 + SKILLS.power.value * n('power'),
+    fireMul: 1 + SKILLS.rapid.value * n('rapid'),
+    speedMul: 1 + SKILLS.boots.value * n('boots'),
+    multishot: n('multishot'),      // 正面の追加本数
+    pierce: n('pierce'),            // 貫通できる敵の数
+    back: n('back') > 0,
+    side: n('side') > 0,
+    grazeMul: 1 + SKILLS.grazeup.value * n('grazeup'),
+    regen: SKILLS.regen.value * n('regen'),   // 毎秒回復量
+  };
+}
+recomputeSkillStats();
+
+// 経験値の加算とレベルアップ判定。ここではキューに積むだけで、
+// 3択画面を開くのは animate()(敵ループの途中で phase を変えないため)
+function gainExp(amount) {
+  level.exp += amount;
+  while (level.exp >= level.next) {
+    level.exp -= level.next;
+    level.lv++;
+    level.next = Math.round(level.next * CONFIG.level.expGrowth);
+    level.pending++;
+  }
+  updateExpHud();
+}
+
+function takeSkill(id) {
+  level.taken[id] = (level.taken[id] || 0) + 1;
+  recomputeSkillStats();
+  if (id === 'vital') {             // 即時効果はここで
+    player.maxHp += SKILLS.vital.value;
+    player.hp = Math.min(player.maxHp, player.hp + SKILLS.vital.value);
+    updateHud();
+  }
+}
+
+function resetLevel() {
+  level.lv = 1;
+  level.exp = 0;
+  level.next = CONFIG.level.baseExp;
+  level.pending = 0;
+  level.taken = {};
+  recomputeSkillStats();
+  updateExpHud();
+}
+
+// スキルを反映した自弾の発射。通常攻撃もバーストの全方位弾もここを通るので、
+// 攻撃力・貫通は常に一括で乗る
+const _arrowDir = new THREE.Vector3();
+function fireArrow(origin, dir, angle, speed, baseDamage) {
+  _arrowDir.copy(dir);
+  if (angle) _arrowDir.applyAxisAngle(_axisY, angle);
+  const b = spawnFromPool(arrowPool, origin, _arrowDir, speed, baseDamage * level.stats.damageMul);
+  if (b) b.pierce = level.stats.pierce;
+  return b;
+}
+
+// 通常攻撃1回ぶん(マルチショットの扇 + バック/サイドショット)
+function firePlayerShot(origin, dir) {
+  const st = level.stats;
+  const C = CONFIG.player;
+  const count = 1 + st.multishot;
+  for (let i = 0; i < count; i++) {
+    fireArrow(origin, dir, (i - (count - 1) / 2) * CONFIG.level.spread, C.arrowSpeed, C.arrowDamage);
+  }
+  if (st.back) fireArrow(origin, dir, Math.PI, C.arrowSpeed, C.arrowDamage);
+  if (st.side) {
+    fireArrow(origin, dir, Math.PI / 2, C.arrowSpeed, C.arrowDamage);
+    fireArrow(origin, dir, -Math.PI / 2, C.arrowSpeed, C.arrowDamage);
+  }
 }
 
 // =====================================================================
@@ -1389,6 +1561,7 @@ function damageEnemy(enemy, amount) {
   );
   if (enemy.hp <= 0) {
     state.score += enemy.def.score;
+    gainExp(enemy.def.exp || 0);    // レベルアップはキューに積むだけ(3択は animate が開く)
     removeEnemy(enemy);
     updateHud();
     if (enemies.length === 0 && state.phase === 'playing') onWaveClear();
@@ -1491,12 +1664,14 @@ function startWave(n) {
 }
 
 function onWaveClear() {
-  player.hp = Math.min(CONFIG.player.maxHp, player.hp + CONFIG.wave.clearHeal);
+  player.hp = Math.min(player.maxHp, player.hp + CONFIG.wave.clearHeal);
   clearPool(bulletPool);
   updateHud();
   showWaveBanner('WAVE CLEAR!  +' + CONFIG.wave.clearHeal + ' HP');
   setTimeout(() => {
     if (state.phase === 'playing') startWave(state.wave + 1);
+    // スキル選択中なら、閉じたとき(closeLevelUp)に次のウェーブを始める
+    else if (state.phase === 'levelup') state.waveQueued = true;
   }, 1600);
 }
 
@@ -1599,10 +1774,11 @@ function readInput() {
 // ゲームループ
 // =====================================================================
 const state = {
-  phase: 'title',   // 'title' | 'playing' | 'gameover'
+  phase: 'title',   // 'title' | 'playing' | 'levelup' | 'gameover'
   wave: 1,
   score: 0,
   time: 0,
+  waveQueued: false,   // スキル選択でウェーブ開始を保留した印
 };
 const clock = new THREE.Clock();
 
@@ -1623,8 +1799,9 @@ function updatePlayer(dt) {
   const pos = player.mesh.position;
 
   if (moving) {
-    pos.x += input.x * CONFIG.player.speed * dt;
-    pos.z += input.z * CONFIG.player.speed * dt;
+    const speed = CONFIG.player.speed * level.stats.speedMul;
+    pos.x += input.x * speed * dt;
+    pos.z += input.z * speed * dt;
     const h = CONFIG.arena.half - CONFIG.player.radius;
     pos.x = Math.max(-h, Math.min(h, pos.x));
     pos.z = Math.max(-h, Math.min(h, pos.z));
@@ -1637,14 +1814,14 @@ function updatePlayer(dt) {
       player.mesh.lookAt(target.mesh.position.x, 0, target.mesh.position.z);
       player.fireTimer -= dt;
       if (player.fireTimer <= 0) {
-        // バースト中は攻撃速度アップ
-        const rate = graze.burstTimer > 0 ? CONFIG.burst.fireRateMul : 1;
+        // バースト中・ラピッドショットは攻撃速度アップ
+        const rate = (graze.burstTimer > 0 ? CONFIG.burst.fireRateMul : 1) * level.stats.fireMul;
         player.fireTimer = CONFIG.player.fireInterval / rate;
         const dir = new THREE.Vector3()
           .subVectors(target.mesh.position, pos);
         dir.y = 0; dir.normalize();
         const origin = pos.clone(); origin.y = 0.95;   // 弓を構える高さ
-        spawnFromPool(arrowPool, origin, dir, CONFIG.player.arrowSpeed, CONFIG.player.arrowDamage);
+        firePlayerShot(origin, dir);                   // スキル(マルチ/バック/サイド等)込みで発射
         player.anim.draw = 0;                          // 弦を放つ
       }
     }
@@ -1659,6 +1836,13 @@ function updatePlayer(dt) {
     player.mesh.visible = true;
   }
 
+  // リジェネ(表示が変わる時だけ HUD を書き換える)
+  if (level.stats.regen > 0 && player.hp < player.maxHp) {
+    const shown = Math.ceil(player.hp);
+    player.hp = Math.min(player.maxHp, player.hp + level.stats.regen * dt);
+    if (Math.ceil(player.hp) !== shown) updateHud();
+  }
+
   updatePlayerAnimation(dt);
 }
 
@@ -1671,11 +1855,18 @@ function updateProjectiles(dt) {
     b.life -= dt;
     const p = b.mesh.position;
     if (b.life <= 0 || Math.abs(p.x) > h || Math.abs(p.z) > h) { deactivate(b); continue; }
-    for (const e of enemies) {
+    // damageEnemy が removeEnemy(splice)を呼ぶので、敵は後ろから回す
+    for (let ei = enemies.length - 1; ei >= 0; ei--) {
+      const e = enemies[ei];
       const r = e.def.radius + 0.25;
-      if (p.distanceToSquared(e.mesh.position.clone().setY(p.y)) < r * r) {
+      if (p.distanceToSquared(e.mesh.position.clone().setY(p.y)) >= r * r) continue;
+      if (b.hits && b.hits.has(e)) continue;   // 貫通した敵に次のフレームで多重ヒットしない
+      damageEnemy(e, b.damage);
+      if (b.pierce > 0) {                      // 貫通スキル: 消えずに突き抜ける
+        b.pierce--;
+        (b.hits || (b.hits = new Set())).add(e);
+      } else {
         deactivate(b);
-        damageEnemy(e, b.damage);
         break;
       }
     }
@@ -1727,6 +1918,10 @@ function animate() {
   const dt = Math.min(clock.getDelta(), 0.05);
   state.time += dt;
 
+  // レベルアップはフレーム頭で処理する(敵ループの途中で phase を変えないため)。
+  // 'levelup' の間は下の更新が止まる = ゲームがポーズされる
+  if (state.phase === 'playing' && level.pending > 0) openLevelUp();
+
   if (state.phase === 'playing') {
     updatePlayer(dt);
     for (let i = enemies.length - 1; i >= 0; i--) updateEnemy(enemies[i], dt);
@@ -1746,6 +1941,10 @@ const hpBar = document.getElementById('hp-bar-inner');
 const hpLabel = document.getElementById('hp-label');
 const grazeBar = document.getElementById('graze-bar-inner');
 const grazeLabel = document.getElementById('graze-label');
+const expBar = document.getElementById('exp-bar-inner');
+const expLabel = document.getElementById('exp-label');
+const levelupScreen = document.getElementById('levelup-screen');
+const skillCardsEl = document.getElementById('skill-cards');
 const waveLabel = document.getElementById('wave-label');
 const scoreLabel = document.getElementById('score-label');
 const waveBanner = document.getElementById('wave-banner');
@@ -1754,12 +1953,12 @@ const gameoverScreen = document.getElementById('gameover-screen');
 const goStats = document.getElementById('go-stats');
 
 function updateHud() {
-  const ratio = Math.max(0, player.hp / CONFIG.player.maxHp);
+  const ratio = Math.max(0, player.hp / player.maxHp);
   hpBar.style.width = (ratio * 100) + '%';
   hpBar.style.background = ratio > 0.35
     ? 'linear-gradient(90deg, #3f6, #6f9)'
     : 'linear-gradient(90deg, #f43, #f86)';
-  hpLabel.textContent = 'HP ' + Math.ceil(player.hp) + ' / ' + CONFIG.player.maxHp;
+  hpLabel.textContent = 'HP ' + Math.ceil(player.hp) + ' / ' + player.maxHp;
   waveLabel.textContent = 'WAVE ' + state.wave;
   scoreLabel.textContent = 'SCORE ' + state.score;
   updateGrazeHud();
@@ -1777,6 +1976,80 @@ function updateGrazeHud() {
   burstBtn.style.display = ready && state.phase === 'playing' ? 'block' : 'none';
 }
 
+// 経験値バーと Lv 表示
+function updateExpHud() {
+  expBar.style.width = (level.exp / level.next * 100) + '%';
+  expLabel.textContent = 'Lv ' + level.lv + '  EXP ' + Math.floor(level.exp) + ' / ' + level.next;
+}
+
+// ---- レベルアップ(スキル3択)画面 ----
+// pending が残っていれば選ぶたびに次の3択を出し直す。全部選び終わるまで 'levelup' のまま
+let levelupPicks = [];   // いま表示中のスキルid(キー 1/2/3 用)
+
+const availableSkills = () =>
+  Object.keys(SKILLS).filter((id) => (level.taken[id] || 0) < SKILLS[id].max);
+
+function openLevelUp() {
+  const pool = availableSkills();
+  if (pool.length === 0) { level.pending = 0; return; }   // 全スキル取り切り
+  state.phase = 'levelup';
+  joyEnd();                          // 動きっぱなしで再開しないように入力を切る
+  updateGrazeHud();                  // バーストボタンを隠す
+
+  // シャッフルして先頭 choices 件を提示(重複なし)
+  for (let i = pool.length - 1; i > 0; i--) {
+    const j = (Math.random() * (i + 1)) | 0;
+    [pool[i], pool[j]] = [pool[j], pool[i]];
+  }
+  levelupPicks = pool.slice(0, CONFIG.level.choices);
+
+  skillCardsEl.innerHTML = '';
+  levelupPicks.forEach((id) => {
+    const s = SKILLS[id];
+    const cur = level.taken[id] || 0;
+    const card = document.createElement('button');
+    card.className = 'skill-card';
+    card.innerHTML =
+      '<div class="s-icon">' + s.icon + '</div>' +
+      '<div class="s-name">' + s.name + '</div>' +
+      '<div class="s-desc">' + s.desc + '</div>' +
+      '<div class="s-lv">' + (cur > 0 ? 'Lv ' + cur + ' → ' + (cur + 1) : 'NEW') + ' / MAX ' + s.max + '</div>';
+    card.addEventListener('click', () => chooseSkill(id));
+    skillCardsEl.appendChild(card);
+  });
+  levelupScreen.style.display = 'flex';
+}
+
+function chooseSkill(id) {
+  if (state.phase !== 'levelup') return;
+  takeSkill(id);
+  level.pending--;
+  if (level.pending > 0 && availableSkills().length > 0) {
+    openLevelUp();                   // まとめてレベルアップした分は続けて選ぶ
+    return;
+  }
+  level.pending = 0;
+  closeLevelUp();
+}
+
+function closeLevelUp() {
+  levelupScreen.style.display = 'none';
+  state.phase = 'playing';
+  updateHud();
+  // 選択中にウェーブクリアの遷移が来ていたらここで開始
+  if (state.waveQueued) {
+    state.waveQueued = false;
+    startWave(state.wave + 1);
+  }
+}
+
+// キーボードでも選べる(1 / 2 / 3)
+window.addEventListener('keydown', (e) => {
+  if (state.phase !== 'levelup') return;
+  const i = ['Digit1', 'Digit2', 'Digit3'].indexOf(e.code);
+  if (i >= 0 && levelupPicks[i]) chooseSkill(levelupPicks[i]);
+});
+
 let bannerTimeout = null;
 function showWaveBanner(text) {
   waveBanner.textContent = text;
@@ -1792,17 +2065,20 @@ function startGame() {
   resetPlayer();
   state.score = 0;
   state.phase = 'playing';
+  state.waveQueued = false;
   resetGraze();
+  resetLevel();
   resetDamageTexts();
   titleScreen.style.display = 'none';
   gameoverScreen.style.display = 'none';
+  levelupScreen.style.display = 'none';
   hudEl.style.display = 'block';
   startWave(1);
 }
 
 function gameOver() {
   state.phase = 'gameover';
-  goStats.innerHTML = 'WAVE ' + state.wave + ' 到達<br>SCORE ' + state.score;
+  goStats.innerHTML = 'WAVE ' + state.wave + ' 到達 / Lv ' + level.lv + '<br>SCORE ' + state.score;
   gameoverScreen.style.display = 'flex';
   hudEl.style.display = 'none';
   updateGrazeHud();                  // バーストボタンを隠す
