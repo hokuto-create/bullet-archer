@@ -20,6 +20,20 @@ GitHub Pages で公開する前提の、ビルド不要な単一 `index.html` �
 - 敵3種: `chaser`(突進・接触ダメージ)/ `shooter`(距離を保って狙撃 + wave3 以降はテレグラフレーザー)/
   `boss`(5ウェーブごと、赤リング予兆→全方位弾幕)
 - ウェーブクリアで HP+15(上限100)、敵弾は全消去
+- **チャプター制**(数値は `CONFIG.chapter`): `chapter.waves`(= 30)本を勝ち抜くと 1 チャプタークリア。
+  最終ウェーブは `wave.bossEvery` の倍数にしておく(30 なのでボス戦で締まる)
+  - ウェーブクリア後の行き先は `advanceWave()` 一本に集約。`onWaveClear()` の `setTimeout` と
+    `closeLevelUp()`(選択中に来たクリアの保留分)の両方がここを通るので、
+    「最終ウェーブなら `chapterClear()`」の判定は1か所で済む
+  - `state.phase = 'clear'` はレベルアップと同じくポーズ扱い(`animate()` の更新が止まる)。
+    止まっている間はダメージ数値が消えずに残るので `chapterClear()` で `resetDamageTexts()` を呼ぶ
+  - リザルトは クリアボーナス + 残HP×`hpBonus` をスコアに加算。
+    ボタンは「このまま続ける」(`state.endless = true` にしてウェーブ上限なしで継続)と「タイトルへ」
+  - `state.endless` 中は `isFinalWave()` が常に false になり、HUD も `WAVE n / 30` ではなく `WAVE n` になる
+  - 難易度は 30 ウェーブぶんの長さに合わせてある: 通常敵の数は `wave.maxCount`(16)で頭打ち、
+    HP は `wave.hpGrowth`(ウェーブごと +5%)で伸ばす。ボスは従来どおり `hpPerWave` 側で伸びる
+  - **ウェーブクリアの判定は `damageEnemy()` の中にある**(`removeEnemy()` ではない)。
+    テストで敵を消すときは `damageEnemy(e, 大きい数)` を使わないとウェーブが進まない
 - **敵HPバー**(数値は `CONFIG.hpBar`): 敵の頭上に出る板。ボスだけ一回り大きい
   - カメラは向きが固定なので `group.quaternion.copy(camera.quaternion)` だけで常に正面を向く。
     敵の `Group` は `lookAt` でヨーが変わるため、バーは scene 直下に置いて位置だけ毎フレーム合わせる
@@ -119,7 +133,10 @@ GitHub Pages で公開する前提の、ビルド不要な単一 `index.html` �
   効果を `recomputeSkillStats()`(数値系)か `takeSkill()`(取得時の即時効果)に足す」。
   発射に関わるものは `fireArrow()` / `firePlayerShot()` に集約されているのでそこへ
 - **Supabase ランキング**: スコアのオンラインランキング。単一 HTML 方針のまま supabase-js を CDN で読み込む想定
-- **ステージ追加**: 床・障害物・敵構成の異なるステージ。ステージ定義もデータ駆動にする
+- **ステージ追加 / CHAPTER 2**: 床・障害物・敵構成の異なるステージ。ステージ定義もデータ駆動にする。
+  いまは `CONFIG.chapter` が 1 チャプター分しか無く、クリア後は「このまま続ける」(エンドレス)だけ。
+  チャプターを増やすときは `CONFIG.chapter` を配列(チャプター定義)にして、
+  `chapterClear()` の続きに「次のチャプターへ」ボタンを足す
 
 ## TODO(挙動改善の候補— 未実装のメモ)
 

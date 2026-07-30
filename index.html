@@ -197,6 +197,23 @@
   #go-title { font-size: clamp(30px, 8vw, 54px); font-weight: 900; color: #ff5566; margin-bottom: 18px;
               text-shadow: 0 0 20px rgba(255,60,80,0.5); }
   #go-stats { font-size: 18px; color: #dde; line-height: 2; margin-bottom: 36px; }
+
+  /* ---- チャプタークリア画面 ---- */
+  #clear-screen { display: none; }
+  #cc-title {
+    font-size: clamp(30px, 8vw, 56px); font-weight: 900;
+    color: #ffe89a; letter-spacing: 0.06em;
+    text-shadow: 0 0 26px rgba(255,200,80,0.65), 0 3px 0 #7a5200;
+  }
+  #cc-sub { font-size: clamp(14px, 3.6vw, 20px); color: #9fc4ff; letter-spacing: 0.2em; margin: 12px 0 26px; }
+  #cc-stats { font-size: 17px; color: #dde; line-height: 2; margin-bottom: 32px; }
+  /* 続ける / タイトルへ の2ボタン。狭い画面では縦に積む */
+  #cc-buttons { display: flex; flex-wrap: wrap; gap: 14px; justify-content: center; }
+  /* 副ボタン(タイトルへ)は金の主ボタンと張り合わないよう暗色に */
+  .btn.sub {
+    color: #dfe6ff; background: linear-gradient(180deg, #3a4470, #232a4c);
+    box-shadow: 0 4px 18px rgba(0,0,0,0.45);
+  }
 </style>
 </head>
 <body>
@@ -241,7 +258,8 @@
     立ち止まると最寄りの敵を自動攻撃!<br>
     敵弾を<b>かすめる</b>とグレイズゲージが溜まる<br>
     満タンで SPACE / BURST ボタン → 弾消し + 全方位射撃<br>
-    敵を倒して経験値ゲット!レベルアップでスキルを選ぼう
+    敵を倒して経験値ゲット!レベルアップでスキルを選ぼう<br>
+    <b>全30ウェーブ</b>を勝ち抜けば CHAPTER 1 クリア!
   </p>
   <button id="start-btn" class="btn">START</button>
 </div>
@@ -250,6 +268,16 @@
   <div id="go-title">GAME OVER</div>
   <div id="go-stats"></div>
   <button id="retry-btn" class="btn">RETRY</button>
+</div>
+
+<div id="clear-screen" class="screen">
+  <div id="cc-title">CHAPTER CLEAR!</div>
+  <div id="cc-sub"></div>
+  <div id="cc-stats"></div>
+  <div id="cc-buttons">
+    <button id="endless-btn" class="btn">このまま続ける</button>
+    <button id="totitle-btn" class="btn sub">タイトルへ</button>
+  </div>
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
@@ -273,9 +301,20 @@ const CONFIG = {
   wave: {
     baseCount: 4,                   // ウェーブ1の敵数
     countPerWave: 1,                // ウェーブごとの追加数
+    maxCount: 16,                   // 同時スポーン数の上限(終盤が画面外の物量勝負にならないように)
+    hpGrowth: 0.05,                 // 通常敵のHPがウェーブごとに増える割合(ボスは hpPerWave 側で伸ばす)
     bossEvery: 5,                   // 5ウェーブごとにボス
     clearHeal: 15,                  // ウェーブクリア時の回復量
     spawnMinDist: 10,               // プレイヤーからの最小スポーン距離
+  },
+  // チャプター: waves 本のウェーブを勝ち抜くと1チャプタークリア。
+  // 最終ウェーブが bossEvery の倍数になるようにしておくとボス戦で締められる
+  chapter: {
+    waves: 30,                      // このウェーブをクリアするとチャプタークリア
+    name: 'CHAPTER 1',
+    subtitle: '〜 始まりの荒野 〜',
+    clearBonus: 5000,               // クリア時のスコアボーナス
+    hpBonus: 20,                    // 残HP1につき加算するスコア(粘り勝ちを評価する)
   },
   // グレイズ: 敵弾を「当たらないギリギリ」で通したときの判定と演出
   graze: {
@@ -1521,7 +1560,10 @@ function spawnEnemy(typeName, waveNum) {
   mesh.position.copy(pos);
   scene.add(mesh);
 
-  const hp = def.hp + (isBoss ? (def.hpPerWave || 0) * (waveNum / CONFIG.wave.bossEvery - 1) : 0);
+  // ボスは出現ウェーブ数に応じた加算、通常敵はウェーブごとの倍率で伸ばす
+  const hp = isBoss
+    ? def.hp + (def.hpPerWave || 0) * (waveNum / CONFIG.wave.bossEvery - 1)
+    : Math.round(def.hp * (1 + CONFIG.wave.hpGrowth * (waveNum - 1)));
   const useLaser = !!def.laser && waveNum >= def.laser.fromWave;
   const enemy = {
     type: typeName, def, mesh,
@@ -1662,6 +1704,11 @@ function updateEnemy(enemy, dt) {
 // =====================================================================
 // ウェーブ管理
 // =====================================================================
+// そのウェーブがチャプターの最終ウェーブか(エンドレス継続中は最終ウェーブなし)
+function isFinalWave(n) {
+  return !state.endless && n >= CONFIG.chapter.waves;
+}
+
 function startWave(n) {
   state.wave = n;
   const isBossWave = n % CONFIG.wave.bossEvery === 0;
@@ -1669,27 +1716,38 @@ function startWave(n) {
     spawnEnemy('boss', n);
     const escorts = 2 + Math.floor(n / CONFIG.wave.bossEvery);
     for (let i = 0; i < escorts; i++) spawnEnemy('chaser', n);
-    showWaveBanner('WAVE ' + n + '  - BOSS -');
+    showWaveBanner(isFinalWave(n) ? 'FINAL WAVE  - BOSS -' : 'WAVE ' + n + '  - BOSS -');
   } else {
-    const count = CONFIG.wave.baseCount + (n - 1) * CONFIG.wave.countPerWave;
+    const count = Math.min(
+      CONFIG.wave.maxCount,
+      CONFIG.wave.baseCount + (n - 1) * CONFIG.wave.countPerWave
+    );
     for (let i = 0; i < count; i++) {
       spawnEnemy(n >= 2 && i % 3 === 2 ? 'shooter' : 'chaser', n);
     }
-    showWaveBanner('WAVE ' + n);
+    showWaveBanner(isFinalWave(n) ? 'FINAL WAVE' : 'WAVE ' + n);
   }
   updateHud();
 }
 
 function onWaveClear() {
-  player.hp = Math.min(player.maxHp, player.hp + CONFIG.wave.clearHeal);
+  const final = isFinalWave(state.wave);
+  if (!final) player.hp = Math.min(player.maxHp, player.hp + CONFIG.wave.clearHeal);
   clearPool(bulletPool);
   updateHud();
-  showWaveBanner('WAVE CLEAR!  +' + CONFIG.wave.clearHeal + ' HP');
+  showWaveBanner(final ? CONFIG.chapter.name + ' CLEAR!' : 'WAVE CLEAR!  +' + CONFIG.wave.clearHeal + ' HP');
   setTimeout(() => {
-    if (state.phase === 'playing') startWave(state.wave + 1);
-    // スキル選択中なら、閉じたとき(closeLevelUp)に次のウェーブを始める
+    if (state.phase === 'playing') advanceWave();
+    // スキル選択中なら、閉じたとき(closeLevelUp)に次へ進む
     else if (state.phase === 'levelup') state.waveQueued = true;
   }, 1600);
+}
+
+// ウェーブクリア後の行き先。最終ウェーブならチャプタークリア画面へ。
+// onWaveClear の setTimeout と closeLevelUp の両方から呼ばれる唯一の入口
+function advanceWave() {
+  if (isFinalWave(state.wave)) chapterClear();
+  else startWave(state.wave + 1);
 }
 
 // =====================================================================
@@ -1791,11 +1849,12 @@ function readInput() {
 // ゲームループ
 // =====================================================================
 const state = {
-  phase: 'title',   // 'title' | 'playing' | 'levelup' | 'gameover'
+  phase: 'title',   // 'title' | 'playing' | 'levelup' | 'gameover' | 'clear'
   wave: 1,
   score: 0,
   time: 0,
   waveQueued: false,   // スキル選択でウェーブ開始を保留した印
+  endless: false,      // チャプタークリア後に「このまま続ける」を選んだ状態
 };
 const clock = new THREE.Clock();
 
@@ -1968,6 +2027,9 @@ const waveBanner = document.getElementById('wave-banner');
 const titleScreen = document.getElementById('title-screen');
 const gameoverScreen = document.getElementById('gameover-screen');
 const goStats = document.getElementById('go-stats');
+const clearScreen = document.getElementById('clear-screen');
+const ccSub = document.getElementById('cc-sub');
+const ccStats = document.getElementById('cc-stats');
 
 function updateHud() {
   const ratio = Math.max(0, player.hp / player.maxHp);
@@ -1976,7 +2038,10 @@ function updateHud() {
     ? 'linear-gradient(90deg, #3f6, #6f9)'
     : 'linear-gradient(90deg, #f43, #f86)';
   hpLabel.textContent = 'HP ' + Math.ceil(player.hp) + ' / ' + player.maxHp;
-  waveLabel.textContent = 'WAVE ' + state.wave;
+  // チャプター中は残りが分かるように「/ 最終ウェーブ」を出す(エンドレスでは番号だけ)
+  waveLabel.textContent = state.endless
+    ? 'WAVE ' + state.wave
+    : 'WAVE ' + state.wave + ' / ' + CONFIG.chapter.waves;
   scoreLabel.textContent = 'SCORE ' + state.score;
   updateGrazeHud();
 }
@@ -2053,10 +2118,10 @@ function closeLevelUp() {
   levelupScreen.style.display = 'none';
   state.phase = 'playing';
   updateHud();
-  // 選択中にウェーブクリアの遷移が来ていたらここで開始
+  // 選択中にウェーブクリアの遷移が来ていたらここで進める
   if (state.waveQueued) {
     state.waveQueued = false;
-    startWave(state.wave + 1);
+    advanceWave();
   }
 }
 
@@ -2083,27 +2148,75 @@ function startGame() {
   state.score = 0;
   state.phase = 'playing';
   state.waveQueued = false;
+  state.endless = false;
   resetGraze();
   resetLevel();
   resetDamageTexts();
   titleScreen.style.display = 'none';
   gameoverScreen.style.display = 'none';
   levelupScreen.style.display = 'none';
+  clearScreen.style.display = 'none';
   hudEl.style.display = 'block';
   startWave(1);
 }
 
 function gameOver() {
   state.phase = 'gameover';
-  goStats.innerHTML = 'WAVE ' + state.wave + ' 到達 / Lv ' + level.lv + '<br>SCORE ' + state.score;
+  goStats.innerHTML = 'WAVE ' + state.wave + (state.endless ? '' : ' / ' + CONFIG.chapter.waves)
+    + ' 到達 / Lv ' + level.lv + '<br>SCORE ' + state.score;
   gameoverScreen.style.display = 'flex';
   hudEl.style.display = 'none';
   updateGrazeHud();                  // バーストボタンを隠す
   joyEnd();
 }
 
+// 最終ウェーブを倒しきったとき。ボーナス加算してリザルトを出す。
+// 'clear' の間は animate() の更新が止まる = ポーズ状態
+function chapterClear() {
+  state.phase = 'clear';
+  const hp = Math.ceil(player.hp);
+  const bonus = CONFIG.chapter.clearBonus + hp * CONFIG.chapter.hpBonus;
+  state.score += bonus;
+  clearPool(arrowPool);
+  clearPool(bulletPool);
+  resetDamageTexts();                // 'clear' 中は animate() が止まるので消し残りを掃除する
+  ccSub.textContent = CONFIG.chapter.name + '  ' + CONFIG.chapter.subtitle;
+  ccStats.innerHTML =
+    'WAVE ' + CONFIG.chapter.waves + ' 制覇 / Lv ' + level.lv + '<br>' +
+    'クリアボーナス +' + CONFIG.chapter.clearBonus + '<br>' +
+    '残HPボーナス +' + (hp * CONFIG.chapter.hpBonus) + '  (HP ' + hp + ')<br>' +
+    'SCORE ' + state.score;
+  clearScreen.style.display = 'flex';
+  hudEl.style.display = 'none';
+  updateGrazeHud();                  // バーストボタンを隠す
+  joyEnd();
+}
+
+// クリア後の「このまま続ける」。以降はウェーブ上限なしで回り続ける
+function continueEndless() {
+  state.endless = true;
+  state.phase = 'playing';
+  clearScreen.style.display = 'none';
+  hudEl.style.display = 'block';
+  player.hp = Math.min(player.maxHp, player.hp + CONFIG.wave.clearHeal);
+  startWave(state.wave + 1);
+}
+
+function goTitle() {
+  while (enemies.length) removeEnemy(enemies[0]);
+  clearPool(arrowPool);
+  clearPool(bulletPool);
+  state.phase = 'title';
+  clearScreen.style.display = 'none';
+  gameoverScreen.style.display = 'none';
+  hudEl.style.display = 'none';
+  titleScreen.style.display = 'flex';
+}
+
 document.getElementById('start-btn').addEventListener('click', startGame);
 document.getElementById('retry-btn').addEventListener('click', startGame);
+document.getElementById('endless-btn').addEventListener('click', continueEndless);
+document.getElementById('totitle-btn').addEventListener('click', goTitle);
 
 // 初期カメラ位置
 updateCameraProjection();
