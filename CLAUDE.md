@@ -20,6 +20,31 @@ GitHub Pages で公開する前提の、ビルド不要な単一 `index.html` �
 - 敵3種: `chaser`(突進・接触ダメージ)/ `shooter`(距離を保って狙撃 + wave3 以降はテレグラフレーザー)/
   `boss`(5ウェーブごと、赤リング予兆→全方位弾幕)
 - ウェーブクリアで HP+15(上限100)、敵弾は全消去
+- **チャプター制**(定義は `CONFIG.chapters` 配列。データ駆動で、増やすときはオブジェクトを足す):
+  各チャプターは `waves`(= 30)本を勝ち抜くとクリア。最終ウェーブは `wave.bossEvery` の倍数に
+  しておく(30 なのでボス戦で締まる)。現在は CHAPTER 1(始まりの荒野)と CHAPTER 2(紅蓮の戦場)
+  - 挑戦中のチャプターは `state.chapter`(添字)。参照は `chapterDef()` を通す
+  - チャプターごとの難易度は `enemyHpMul` / `enemySpeedMul` / `bulletSpeedMul`。
+    HP はスポーン時に掛かるが、`ENEMY_TYPES` の def は全敵で共有なので移動速度は
+    敵インスタンス側の `enemy.speedMul` に持たせ、弾速は `fireEnemyAttack()` で掛ける
+  - 見た目も `floorColor` / `wallColor` / `wallEmissive` で変わる(`applyChapterVisual()`。
+    床と壁のマテリアルの色を書き換えるだけで、ジオメトリは作り直さない)
+  - **解放状況は localStorage**(キー `bulletArcher.cleared`、クリア済みチャプター数)。
+    読み書きは try/catch(プライベートモード対策)。タイトルは `renderChapterSelect()` が
+    チャプター選択ボタンを生成し、未解放は 🔒 表示で `disabled`
+  - ウェーブクリア後の行き先は `advanceWave()` 一本に集約。`onWaveClear()` の `setTimeout` と
+    `closeLevelUp()`(選択中に来たクリアの保留分)の両方がここを通るので、
+    「最終ウェーブなら `chapterClear()`」の判定は1か所で済む
+  - `state.phase = 'clear'` はレベルアップと同じくポーズ扱い(`animate()` の更新が止まる)。
+    止まっている間はダメージ数値が消えずに残るので `chapterClear()` で `resetDamageTexts()` を呼ぶ
+  - リザルトは クリアボーナス + 残HP×`hpBonus` をスコアに加算。ボタンは
+    「次のチャプターへ」(次があるときだけ表示。`startGame(state.chapter + 1)`)と
+    「このまま続ける」(`state.endless = true` にしてウェーブ上限なしで継続)と「タイトルへ」
+  - `state.endless` 中は `isFinalWave()` が常に false になり、HUD も `WAVE n / 30` ではなく `WAVE n` になる
+  - 難易度は 30 ウェーブぶんの長さに合わせてある: 通常敵の数は `wave.maxCount`(30)で頭打ち、
+    HP は `wave.hpGrowth`(ウェーブごと +10%)で伸ばす。ボスは従来どおり `hpPerWave` 側で伸びる
+  - **ウェーブクリアの判定は `damageEnemy()` の中にある**(`removeEnemy()` ではない)。
+    テストで敵を消すときは `damageEnemy(e, 大きい数)` を使わないとウェーブが進まない
 - **敵HPバー**(数値は `CONFIG.hpBar`): 敵の頭上に出る板。ボスだけ一回り大きい
   - カメラは向きが固定なので `group.quaternion.copy(camera.quaternion)` だけで常に正面を向く。
     敵の `Group` は `lookAt` でヨーが変わるため、バーは scene 直下に置いて位置だけ毎フレーム合わせる
@@ -119,7 +144,9 @@ GitHub Pages で公開する前提の、ビルド不要な単一 `index.html` �
   効果を `recomputeSkillStats()`(数値系)か `takeSkill()`(取得時の即時効果)に足す」。
   発射に関わるものは `fireArrow()` / `firePlayerShot()` に集約されているのでそこへ
 - **Supabase ランキング**: スコアのオンラインランキング。単一 HTML 方針のまま supabase-js を CDN で読み込む想定
-- **ステージ追加**: 床・障害物・敵構成の異なるステージ。ステージ定義もデータ駆動にする
+- **チャプターのさらなる差別化**: いまのチャプター差は難易度倍率と床・壁の色だけ。
+  障害物・敵構成(チャプター固有の敵タイプや出現テーブル)・弾幕パターンの差し替えも
+  `CONFIG.chapters` のエントリに持たせてデータ駆動で広げる
 
 ## TODO(挙動改善の候補— 未実装のメモ)
 
