@@ -30,8 +30,8 @@ GitHub Pages で公開する前提の、ビルド不要な単一 `index.html` �
   - リザルトは クリアボーナス + 残HP×`hpBonus` をスコアに加算。
     ボタンは「このまま続ける」(`state.endless = true` にしてウェーブ上限なしで継続)と「タイトルへ」
   - `state.endless` 中は `isFinalWave()` が常に false になり、HUD も `WAVE n / 30` ではなく `WAVE n` になる
-  - 難易度は 30 ウェーブぶんの長さに合わせてある: 通常敵の数は `wave.maxCount`(16)で頭打ち、
-    HP は `wave.hpGrowth`(ウェーブごと +5%)で伸ばす。ボスは従来どおり `hpPerWave` 側で伸びる
+  - 難易度は 30 ウェーブぶんの長さに合わせてある: 通常敵の数は `wave.maxCount`(30)で頭打ち、
+    HP は `wave.hpGrowth`(ウェーブごと +10%)で伸ばす。ボスは従来どおり `hpPerWave` 側で伸びる
   - **ウェーブクリアの判定は `damageEnemy()` の中にある**(`removeEnemy()` ではない)。
     テストで敵を消すときは `damageEnemy(e, 大きい数)` を使わないとウェーブが進まない
 - **敵HPバー**(数値は `CONFIG.hpBar`): 敵の頭上に出る板。ボスだけ一回り大きい
