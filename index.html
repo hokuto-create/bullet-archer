@@ -38,6 +38,7 @@
   }
   #hud-row { display: flex; justify-content: space-between; align-items: flex-start; }
   #hud-right { text-align: right; text-shadow: 0 1px 3px #000; }
+  #chapter-label { font-size: 11px; color: #9fc4ff; letter-spacing: 0.08em; }
   #wave-label { font-size: 18px; font-weight: bold; color: #ffd76a; }
   #score-label { font-size: 14px; color: #ccc; }
   #hp-label { font-size: 11px; color: #cfc; margin-top: 2px; text-shadow: 0 1px 2px #000; }
@@ -209,11 +210,32 @@
   #cc-stats { font-size: 17px; color: #dde; line-height: 2; margin-bottom: 32px; }
   /* 続ける / タイトルへ の2ボタン。狭い画面では縦に積む */
   #cc-buttons { display: flex; flex-wrap: wrap; gap: 14px; justify-content: center; }
-  /* 副ボタン(タイトルへ)は金の主ボタンと張り合わないよう暗色に */
+  /* 副ボタンは金の主ボタンと張り合わないよう暗色に */
   .btn.sub {
     color: #dfe6ff; background: linear-gradient(180deg, #3a4470, #232a4c);
     box-shadow: 0 4px 18px rgba(0,0,0,0.45);
   }
+
+  /* ---- タイトルのチャプター選択 ---- */
+  #chapter-select {
+    display: flex; flex-direction: column; gap: 12px;
+    width: min(86vw, 340px);
+  }
+  .chapter-btn {
+    display: flex; flex-direction: column; align-items: center; gap: 4px;
+    font-family: inherit; cursor: pointer;
+    color: #10142a; background: linear-gradient(180deg, #ffd76a, #f0a830);
+    border: none; border-radius: 16px; padding: 14px 20px;
+    box-shadow: 0 4px 18px rgba(255,170,0,0.4);
+  }
+  .chapter-btn:active { transform: scale(0.97); }
+  .chapter-btn .c-name { font-size: 20px; font-weight: 900; letter-spacing: 0.08em; }
+  .chapter-btn .c-sub { font-size: 12px; }
+  .chapter-btn.locked {
+    color: #8892b0; background: linear-gradient(180deg, #2a3050, #1a2038);
+    box-shadow: none; cursor: default;
+  }
+  .chapter-btn.locked:active { transform: none; }
 </style>
 </head>
 <body>
@@ -230,6 +252,7 @@
       <div id="exp-label">Lv 1</div>
     </div>
     <div id="hud-right">
+      <div id="chapter-label">CHAPTER 1</div>
       <div id="wave-label">WAVE 1</div>
       <div id="score-label">SCORE 0</div>
     </div>
@@ -259,9 +282,9 @@
     敵弾を<b>かすめる</b>とグレイズゲージが溜まる<br>
     満タンで SPACE / BURST ボタン → 弾消し + 全方位射撃<br>
     敵を倒して経験値ゲット!レベルアップでスキルを選ぼう<br>
-    <b>全30ウェーブ</b>を勝ち抜けば CHAPTER 1 クリア!
+    <b>全30ウェーブ</b>を勝ち抜けばチャプタークリア!次のチャプターが解放される
   </p>
-  <button id="start-btn" class="btn">START</button>
+  <div id="chapter-select"></div>
 </div>
 
 <div id="gameover-screen" class="screen">
@@ -275,7 +298,8 @@
   <div id="cc-sub"></div>
   <div id="cc-stats"></div>
   <div id="cc-buttons">
-    <button id="endless-btn" class="btn">このまま続ける</button>
+    <button id="next-btn" class="btn">次のチャプターへ</button>
+    <button id="endless-btn" class="btn sub">このまま続ける</button>
     <button id="totitle-btn" class="btn sub">タイトルへ</button>
   </div>
 </div>
@@ -307,15 +331,26 @@ const CONFIG = {
     clearHeal: 15,                  // ウェーブクリア時の回復量
     spawnMinDist: 10,               // プレイヤーからの最小スポーン距離
   },
-  // チャプター: waves 本のウェーブを勝ち抜くと1チャプタークリア。
-  // 最終ウェーブが bossEvery の倍数になるようにしておくとボス戦で締められる
-  chapter: {
-    waves: 30,                      // このウェーブをクリアするとチャプタークリア
-    name: 'CHAPTER 1',
-    subtitle: '〜 始まりの荒野 〜',
-    clearBonus: 5000,               // クリア時のスコアボーナス
-    hpBonus: 20,                    // 残HP1につき加算するスコア(粘り勝ちを評価する)
-  },
+  // チャプター定義(データ駆動: 増やすときはここにオブジェクトを足す)。
+  // waves 本のウェーブを勝ち抜くと1チャプタークリアで、次のチャプターが解放される
+  // (解放状況は localStorage に保存)。最終ウェーブは bossEvery の倍数にしておくと
+  // ボス戦で締められる。enemy*Mul はそのチャプターの敵全体に掛かる難易度倍率
+  chapters: [
+    {
+      waves: 30, name: 'CHAPTER 1', subtitle: '〜 始まりの荒野 〜',
+      clearBonus: 5000,             // クリア時のスコアボーナス
+      hpBonus: 20,                  // 残HP1につき加算するスコア(粘り勝ちを評価する)
+      enemyHpMul: 1, enemySpeedMul: 1, bulletSpeedMul: 1,
+      floorColor: 0x1a1f33, wallColor: 0x3355aa, wallEmissive: 0x112244,
+    },
+    {
+      waves: 30, name: 'CHAPTER 2', subtitle: '〜 紅蓮の戦場 〜',
+      clearBonus: 10000,
+      hpBonus: 30,
+      enemyHpMul: 1.6, enemySpeedMul: 1.15, bulletSpeedMul: 1.2,
+      floorColor: 0x2c1520, wallColor: 0xaa3355, wallEmissive: 0x441122,
+    },
+  ],
   // グレイズ: 敵弾を「当たらないギリギリ」で通したときの判定と演出
   graze: {
     innerRadius: 0.55,              // これより内側はグレイズにしない(実際の被弾判定はこれより外なので下限として働く)
@@ -496,10 +531,11 @@ const grid = new THREE.GridHelper(floorSize, Math.round(floorSize / 2), 0x334466
 grid.position.y = 0.01;
 scene.add(grid);
 
-// アリーナ境界の枠
+// アリーナ境界の枠(マテリアルはチャプターごとに色を変えるので外に持つ)
+const wallMat = new THREE.MeshLambertMaterial({ color: 0x3355aa, emissive: 0x112244 });
 (function addWalls() {
   const h = CONFIG.arena.half;
-  const mat = new THREE.MeshLambertMaterial({ color: 0x3355aa, emissive: 0x112244 });
+  const mat = wallMat;
   const geoH = new THREE.BoxGeometry(h * 2 + 1, 1, 0.5);
   const geoV = new THREE.BoxGeometry(0.5, 1, h * 2 + 1);
   [[0, h + 0.25, geoH], [0, -h - 0.25, geoH]].forEach(([x, z, g]) => {
@@ -509,6 +545,13 @@ scene.add(grid);
     const m = new THREE.Mesh(g, mat); m.position.set(x, 0.5, z); scene.add(m);
   });
 })();
+
+// チャプターごとの見た目(床・壁の色)。startGame() が適用する
+function applyChapterVisual(ch) {
+  floor.material.color.setHex(ch.floorColor);
+  wallMat.color.setHex(ch.wallColor);
+  wallMat.emissive.setHex(ch.wallEmissive);
+}
 
 // 「プレイヤー中心 visibleRadius の円が必ず画面内に入る」よう平行投影の画角を決める。
 // 見下ろしているぶん地面は画面縦方向に sin(pitch) 倍に潰れて写るので、
@@ -1560,14 +1603,18 @@ function spawnEnemy(typeName, waveNum) {
   mesh.position.copy(pos);
   scene.add(mesh);
 
-  // ボスは出現ウェーブ数に応じた加算、通常敵はウェーブごとの倍率で伸ばす
-  const hp = isBoss
+  // ボスは出現ウェーブ数に応じた加算、通常敵はウェーブごとの倍率で伸ばす。
+  // さらにチャプターの難易度倍率が全体に掛かる
+  const ch = chapterDef();
+  const baseHp = isBoss
     ? def.hp + (def.hpPerWave || 0) * (waveNum / CONFIG.wave.bossEvery - 1)
-    : Math.round(def.hp * (1 + CONFIG.wave.hpGrowth * (waveNum - 1)));
+    : def.hp * (1 + CONFIG.wave.hpGrowth * (waveNum - 1));
+  const hp = Math.round(baseHp * ch.enemyHpMul);
   const useLaser = !!def.laser && waveNum >= def.laser.fromWave;
   const enemy = {
     type: typeName, def, mesh,
     hp, maxHp: hp,
+    speedMul: ch.enemySpeedMul,     // チャプターの移動速度倍率(def は共有なので敵側に持つ)
     hpBar: makeHpBar(def, isBoss),
     attackTimer: def.attack ? def.attack.interval * (0.5 + Math.random() * 0.5) : 0,
     telegraphTimer: -1,             // >=0 の間は予兆中
@@ -1632,7 +1679,7 @@ function fireEnemyAttack(enemy) {
   const dirs = BULLET_PATTERNS[atk.pattern](enemy, player.mesh.position);
   const origin = enemy.mesh.position.clone();
   origin.y = 0.9;
-  for (const d of dirs) spawnFromPool(bulletPool, origin, d, atk.speed, atk.damage);
+  for (const d of dirs) spawnFromPool(bulletPool, origin, d, atk.speed * chapterDef().bulletSpeedMul, atk.damage);
 }
 
 function updateEnemy(enemy, dt) {
@@ -1658,7 +1705,7 @@ function updateEnemy(enemy, dt) {
   // レーザー中は足を止める(発射点も角度も固定なので、動くと線と実際のビームがずれる)
   if (enemy.laserPhase) moveVec = null;
   if (moveVec) {
-    pos.addScaledVector(moveVec, def.speed * dt);
+    pos.addScaledVector(moveVec, def.speed * enemy.speedMul * dt);
     const h = CONFIG.arena.half - def.radius;
     pos.x = Math.max(-h, Math.min(h, pos.x));
     pos.z = Math.max(-h, Math.min(h, pos.z));
@@ -1704,9 +1751,14 @@ function updateEnemy(enemy, dt) {
 // =====================================================================
 // ウェーブ管理
 // =====================================================================
+// いま挑戦中のチャプター定義
+function chapterDef() {
+  return CONFIG.chapters[state.chapter];
+}
+
 // そのウェーブがチャプターの最終ウェーブか(エンドレス継続中は最終ウェーブなし)
 function isFinalWave(n) {
-  return !state.endless && n >= CONFIG.chapter.waves;
+  return !state.endless && n >= chapterDef().waves;
 }
 
 function startWave(n) {
@@ -1735,7 +1787,7 @@ function onWaveClear() {
   if (!final) player.hp = Math.min(player.maxHp, player.hp + CONFIG.wave.clearHeal);
   clearPool(bulletPool);
   updateHud();
-  showWaveBanner(final ? CONFIG.chapter.name + ' CLEAR!' : 'WAVE CLEAR!  +' + CONFIG.wave.clearHeal + ' HP');
+  showWaveBanner(final ? chapterDef().name + ' CLEAR!' : 'WAVE CLEAR!  +' + CONFIG.wave.clearHeal + ' HP');
   setTimeout(() => {
     if (state.phase === 'playing') advanceWave();
     // スキル選択中なら、閉じたとき(closeLevelUp)に次へ進む
@@ -1850,6 +1902,7 @@ function readInput() {
 // =====================================================================
 const state = {
   phase: 'title',   // 'title' | 'playing' | 'levelup' | 'gameover' | 'clear'
+  chapter: 0,       // 挑戦中のチャプター(CONFIG.chapters の添字)
   wave: 1,
   score: 0,
   time: 0,
@@ -2030,6 +2083,35 @@ const goStats = document.getElementById('go-stats');
 const clearScreen = document.getElementById('clear-screen');
 const ccSub = document.getElementById('cc-sub');
 const ccStats = document.getElementById('cc-stats');
+const nextBtn = document.getElementById('next-btn');
+const chapterLabel = document.getElementById('chapter-label');
+const chapterSelectEl = document.getElementById('chapter-select');
+
+// チャプターの解放状況(クリア済みチャプター数)。localStorage が使えない環境では実行中だけ保持
+const PROGRESS_KEY = 'bulletArcher.cleared';
+let clearedChapters = 0;
+try {
+  clearedChapters = Math.min(CONFIG.chapters.length, parseInt(localStorage.getItem(PROGRESS_KEY), 10) || 0);
+} catch (e) { /* プライベートモード等 */ }
+function saveProgress() {
+  try { localStorage.setItem(PROGRESS_KEY, clearedChapters); } catch (e) { /* 保存できなくても続行 */ }
+}
+
+// タイトルのチャプター選択。クリア済みの次のチャプターまで解放される
+function renderChapterSelect() {
+  chapterSelectEl.innerHTML = '';
+  CONFIG.chapters.forEach((ch, i) => {
+    const unlocked = i <= clearedChapters;
+    const btn = document.createElement('button');
+    btn.className = 'chapter-btn' + (unlocked ? '' : ' locked');
+    btn.innerHTML = unlocked
+      ? '<span class="c-name">' + ch.name + '</span><span class="c-sub">' + ch.subtitle + '</span>'
+      : '<span class="c-name">🔒 ' + ch.name + '</span><span class="c-sub">' + CONFIG.chapters[i - 1].name + ' をクリアで解放</span>';
+    if (unlocked) btn.addEventListener('click', () => startGame(i));
+    else btn.disabled = true;
+    chapterSelectEl.appendChild(btn);
+  });
+}
 
 function updateHud() {
   const ratio = Math.max(0, player.hp / player.maxHp);
@@ -2038,10 +2120,11 @@ function updateHud() {
     ? 'linear-gradient(90deg, #3f6, #6f9)'
     : 'linear-gradient(90deg, #f43, #f86)';
   hpLabel.textContent = 'HP ' + Math.ceil(player.hp) + ' / ' + player.maxHp;
+  chapterLabel.textContent = chapterDef().name;
   // チャプター中は残りが分かるように「/ 最終ウェーブ」を出す(エンドレスでは番号だけ)
   waveLabel.textContent = state.endless
     ? 'WAVE ' + state.wave
-    : 'WAVE ' + state.wave + ' / ' + CONFIG.chapter.waves;
+    : 'WAVE ' + state.wave + ' / ' + chapterDef().waves;
   scoreLabel.textContent = 'SCORE ' + state.score;
   updateGrazeHud();
 }
@@ -2140,7 +2223,9 @@ function showWaveBanner(text) {
   bannerTimeout = setTimeout(() => { waveBanner.style.opacity = '0'; }, 1400);
 }
 
-function startGame() {
+function startGame(chapterIndex) {
+  state.chapter = chapterIndex;
+  applyChapterVisual(chapterDef());
   while (enemies.length) removeEnemy(enemies[0]);
   clearPool(arrowPool);
   clearPool(bulletPool);
@@ -2162,7 +2247,8 @@ function startGame() {
 
 function gameOver() {
   state.phase = 'gameover';
-  goStats.innerHTML = 'WAVE ' + state.wave + (state.endless ? '' : ' / ' + CONFIG.chapter.waves)
+  goStats.innerHTML = chapterDef().name + '  WAVE ' + state.wave
+    + (state.endless ? '' : ' / ' + chapterDef().waves)
     + ' 到達 / Lv ' + level.lv + '<br>SCORE ' + state.score;
   gameoverScreen.style.display = 'flex';
   hudEl.style.display = 'none';
@@ -2170,22 +2256,27 @@ function gameOver() {
   joyEnd();
 }
 
-// 最終ウェーブを倒しきったとき。ボーナス加算してリザルトを出す。
+// 最終ウェーブを倒しきったとき。ボーナス加算してリザルトを出し、次のチャプターを解放する。
 // 'clear' の間は animate() の更新が止まる = ポーズ状態
 function chapterClear() {
   state.phase = 'clear';
+  const ch = chapterDef();
+  clearedChapters = Math.max(clearedChapters, state.chapter + 1);
+  saveProgress();
   const hp = Math.ceil(player.hp);
-  const bonus = CONFIG.chapter.clearBonus + hp * CONFIG.chapter.hpBonus;
+  const bonus = ch.clearBonus + hp * ch.hpBonus;
   state.score += bonus;
   clearPool(arrowPool);
   clearPool(bulletPool);
   resetDamageTexts();                // 'clear' 中は animate() が止まるので消し残りを掃除する
-  ccSub.textContent = CONFIG.chapter.name + '  ' + CONFIG.chapter.subtitle;
+  ccSub.textContent = ch.name + '  ' + ch.subtitle;
   ccStats.innerHTML =
-    'WAVE ' + CONFIG.chapter.waves + ' 制覇 / Lv ' + level.lv + '<br>' +
-    'クリアボーナス +' + CONFIG.chapter.clearBonus + '<br>' +
-    '残HPボーナス +' + (hp * CONFIG.chapter.hpBonus) + '  (HP ' + hp + ')<br>' +
+    'WAVE ' + ch.waves + ' 制覇 / Lv ' + level.lv + '<br>' +
+    'クリアボーナス +' + ch.clearBonus + '<br>' +
+    '残HPボーナス +' + (hp * ch.hpBonus) + '  (HP ' + hp + ')<br>' +
     'SCORE ' + state.score;
+  // 次のチャプターがあるときだけ「次のチャプターへ」を出す
+  nextBtn.style.display = state.chapter + 1 < CONFIG.chapters.length ? '' : 'none';
   clearScreen.style.display = 'flex';
   hudEl.style.display = 'none';
   updateGrazeHud();                  // バーストボタンを隠す
@@ -2207,16 +2298,18 @@ function goTitle() {
   clearPool(arrowPool);
   clearPool(bulletPool);
   state.phase = 'title';
+  renderChapterSelect();             // 解放されたチャプターを反映
   clearScreen.style.display = 'none';
   gameoverScreen.style.display = 'none';
   hudEl.style.display = 'none';
   titleScreen.style.display = 'flex';
 }
 
-document.getElementById('start-btn').addEventListener('click', startGame);
-document.getElementById('retry-btn').addEventListener('click', startGame);
+document.getElementById('retry-btn').addEventListener('click', () => startGame(state.chapter));
+nextBtn.addEventListener('click', () => startGame(state.chapter + 1));
 document.getElementById('endless-btn').addEventListener('click', continueEndless);
 document.getElementById('totitle-btn').addEventListener('click', goTitle);
+renderChapterSelect();
 
 // 初期カメラ位置
 updateCameraProjection();
