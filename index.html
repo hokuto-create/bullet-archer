@@ -91,23 +91,38 @@
     text-shadow: 0 0 22px rgba(140,255,80,0.55);
   }
   #levelup-sub { font-size: 14px; color: #cde; margin: 8px 0 26px; }
+  /* 3枚は必ず横一列。折り返さず、狭い画面では札と文字の方を縮める
+     (grid の 1fr + min-width:0 + clamp。flex-wrap だと 2+1 に割れる) */
   #skill-cards {
-    display: flex; flex-wrap: wrap; gap: 12px;
-    justify-content: center; max-width: 720px;
+    display: grid; grid-template-columns: repeat(3, 1fr);
+    gap: clamp(6px, 1.8vw, 14px);
+    width: 100%; max-width: 720px;
   }
   .skill-card {
-    width: min(200px, 29vw); min-width: 150px;
+    min-width: 0;
+    display: flex; flex-direction: column; align-items: center;
     background: linear-gradient(180deg, rgba(40,48,88,0.95), rgba(22,26,52,0.95));
     border: 2px solid rgba(160,190,255,0.45);
-    border-radius: 14px; padding: 16px 12px;
+    border-radius: 14px;
+    padding: clamp(10px, 2.6vw, 16px) clamp(6px, 1.6vw, 12px);
     color: #fff; text-align: center; cursor: pointer;
     font-family: inherit;
   }
   .skill-card:active { transform: scale(0.96); }
-  .skill-card .s-icon { font-size: 34px; line-height: 1.2; }
-  .skill-card .s-name { font-size: 15px; font-weight: bold; color: #ffd76a; margin: 8px 0 6px; }
-  .skill-card .s-desc { font-size: 12px; color: #bcd; line-height: 1.6; min-height: 3.2em; }
-  .skill-card .s-lv { font-size: 11px; color: #9fe08a; margin-top: 6px; font-weight: bold; }
+  .skill-card .s-icon { font-size: clamp(24px, 6.4vw, 34px); line-height: 1.2; }
+  .skill-card .s-name {
+    font-size: clamp(12px, 3.4vw, 15px); font-weight: bold; color: #ffd76a;
+    margin: 8px 0 6px; line-height: 1.3;
+  }
+  /* 説明は長さがまちまちなので、伸びる側をここにして Lv 行を下端に揃える */
+  .skill-card .s-desc {
+    font-size: clamp(10px, 2.8vw, 12px); color: #bcd; line-height: 1.6;
+    min-height: 3.2em; flex: 1 1 auto;
+  }
+  .skill-card .s-lv {
+    font-size: clamp(9px, 2.5vw, 11px); color: #9fe08a;
+    margin-top: 6px; font-weight: bold;
+  }
 
   /* ---- バーストボタン(ゲージ満タンのときだけ出る)---- */
   #burst-btn {
@@ -1204,17 +1219,19 @@ function resetDamageTexts() {
 // スキルはデータ駆動: 追加するときは SKILLS にオブジェクトを足し、
 // 効果は recomputeSkillStats() に1行足す。効果は taken(取得回数)から毎回
 // まとめて再計算するので、取得順や重ね取りを個別に気にしなくてよい
+// 名前は効果そのままの直訳を避け、技名らしい呼び名にしている。
+// 何が起きるかは desc が全部書いているので、name 側は雰囲気を優先してよい
 const SKILLS = {
-  multishot: { icon: '🏹', name: 'マルチショット', desc: '正面の矢が1本増える(扇状に発射)', max: 3 },
-  power:     { icon: '💥', name: 'パワーショット', desc: '矢の攻撃力 +25%', max: 5, value: 0.25 },
-  rapid:     { icon: '⚡', name: 'ラピッドショット', desc: '攻撃速度 +20%', max: 5, value: 0.2 },
-  boots:     { icon: '👢', name: 'スイフトブーツ', desc: '移動速度 +10%', max: 3, value: 0.1 },
-  vital:     { icon: '❤️', name: 'バイタリティ', desc: '最大HP +25(取得時に25回復)', max: 4, value: 25 },
-  pierce:    { icon: '🎯', name: '貫通の矢', desc: '矢が敵を貫通する(+1体)', max: 2 },
-  back:      { icon: '🔄', name: 'バックショット', desc: '後方にも矢を放つ', max: 1 },
-  side:      { icon: '↔️', name: 'サイドショット', desc: '左右にも矢を放つ', max: 1 },
-  grazeup:   { icon: '✨', name: 'グレイズ強化', desc: 'グレイズのゲージ増加 +50%', max: 2, value: 0.5 },
-  regen:     { icon: '🌿', name: 'リジェネ', desc: '毎秒HPが1回復する', max: 2, value: 1 },
+  multishot: { icon: '🏹', name: '乱れ撃ち',     desc: '正面の矢が1本増える(扇状に発射)', max: 3 },
+  power:     { icon: '💥', name: '剛弓の一撃',   desc: '矢の攻撃力 +25%', max: 5, value: 0.25 },
+  rapid:     { icon: '⚡', name: '疾風の指',     desc: '攻撃速度 +20%', max: 5, value: 0.2 },
+  boots:     { icon: '👢', name: '韋駄天の脚',   desc: '移動速度 +10%', max: 3, value: 0.1 },
+  vital:     { icon: '❤️', name: '勇者の血脈',   desc: '最大HP +25(取得時に25回復)', max: 4, value: 25 },
+  pierce:    { icon: '🎯', name: '射抜きの極意', desc: '矢が敵を貫通する(+1体)', max: 2 },
+  back:      { icon: '🔄', name: '背中の目',     desc: '後方にも矢を放つ', max: 1 },
+  side:      { icon: '↔️', name: '両翼の構え',   desc: '左右にも矢を放つ', max: 1 },
+  grazeup:   { icon: '✨', name: '紙一重の妙',   desc: 'グレイズのゲージ増加 +50%', max: 2, value: 0.5 },
+  regen:     { icon: '🌿', name: '命の芽吹き',   desc: '毎秒HPが1回復する', max: 2, value: 1 },
 };
 
 const level = {
