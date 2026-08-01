@@ -355,6 +355,10 @@ const CONFIG = {
   graze: {
     innerRadius: 0.55,              // これより内側はグレイズにしない(実際の被弾判定はこれより外なので下限として働く)
     outerRadius: 1.3,               // ここまで近づいた弾がグレイズ成立
+    rangeRingWidth: 0.06,           // 判定範囲リング(outerRadius に沿って常時表示)の線の太さ
+    rangeRingOpacity: 0.16,         // 同リングの普段の濃さ(視界の邪魔にならない薄さに)
+    rangeRingFlashOpacity: 0.55,    // グレイズ成立の瞬間の濃さ
+    rangeRingFlashDuration: 0.3,    // 成立後、普段の濃さへ戻るまでの時間(秒)
     gaugeMax: 100,
     gain: 8,                        // グレイズ1回の加算量(時間減衰はしない)
     fxCount: 12,                    // 同時に出せる白リングの数
@@ -683,6 +687,21 @@ const HERO = {
   group.add(ring);
   P.ring = ring;
 
+  // グレイズ判定範囲のリング(半径 = CONFIG.graze.outerRadius)。
+  // 普段は薄く敷いておき、グレイズ成立の瞬間だけ updatePlayerAnimation() が明るくする
+  const gz = CONFIG.graze;
+  const grazeRing = new THREE.Mesh(
+    new THREE.RingGeometry(gz.outerRadius - gz.rangeRingWidth, gz.outerRadius, 48),
+    new THREE.MeshBasicMaterial({
+      color: 0x9fd8ff, transparent: true, opacity: gz.rangeRingOpacity,
+      side: THREE.DoubleSide, depthWrite: false,
+    })
+  );
+  grazeRing.rotation.x = -Math.PI / 2;
+  grazeRing.position.y = 0.025;
+  group.add(grazeRing);
+  P.grazeRing = grazeRing;
+
   // 上下動・前傾を受け持つルート
   const root = new THREE.Group();
   group.add(root);
@@ -1006,6 +1025,12 @@ function updatePlayerAnimation(dt) {
   P.ring.rotation.z -= dt * 0.9;
   P.ring.material.opacity = 0.38 + 0.22 * aim;
 
+  // グレイズ判定範囲リング: 成立直後だけ明るくし、指数減衰でなく線形に戻す(短いので十分)
+  const gz = CONFIG.graze;
+  if (graze.rangeFlash > 0) graze.rangeFlash = Math.max(0, graze.rangeFlash - dt);
+  P.grazeRing.material.opacity = gz.rangeRingOpacity +
+    (gz.rangeRingFlashOpacity - gz.rangeRingOpacity) * (graze.rangeFlash / gz.rangeRingFlashDuration);
+
   updateBowPose();
   updateBowString();
 }
@@ -1109,6 +1134,7 @@ function clearPool(pool) { pool.forEach(deactivate); }
 const graze = {
   gauge: 0,          // 0 〜 CONFIG.graze.gaugeMax
   burstTimer: 0,     // >0 の間はバースト効果(攻撃速度アップ)が続いている
+  rangeFlash: 0,     // >0 の間は判定範囲リングを明るく表示(成立の瞬間にセット)
 };
 
 const burstReady = () => graze.gauge >= CONFIG.graze.gaugeMax;
@@ -1160,6 +1186,7 @@ function updateGrazeFx(dt) {
 // グレイズ成立(敵弾・レーザーの判定側から呼ぶ)
 function onGraze() {
   graze.gauge = Math.min(CONFIG.graze.gaugeMax, graze.gauge + CONFIG.graze.gain * level.stats.grazeMul);
+  graze.rangeFlash = CONFIG.graze.rangeRingFlashDuration;
   const p = player.mesh.position;
   spawnGrazeFx(p.x, p.z, 1, 0xffffff);
   updateGrazeHud();
@@ -1186,6 +1213,7 @@ function tryBurst() {
 function resetGraze() {
   graze.gauge = 0;
   graze.burstTimer = 0;
+  graze.rangeFlash = 0;
   for (const fx of grazeFxPool) { fx.life = 0; fx.mesh.visible = false; }
   updateGrazeHud();
 }
