@@ -86,12 +86,24 @@
     background: rgba(6,8,18,0.72);
     padding: env(safe-area-inset-top) 12px env(safe-area-inset-bottom);
   }
+  /* 出現演出: 画面が display:none → flex になるとアニメーションが再生される。
+     連続レベルアップ中は画面が出っぱなしなのでタイトルは再生されず、
+     カード(毎回作り直す)だけが跳ね直す */
   #levelup-title {
     font-size: clamp(28px, 7vw, 46px); font-weight: 900;
     color: #b6ff7a; letter-spacing: 0.08em;
     text-shadow: 0 0 22px rgba(140,255,80,0.55);
+    animation: title-in 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) backwards;
   }
-  #levelup-sub { font-size: 14px; color: #cde; margin: 8px 0 26px; }
+  @keyframes title-in {
+    from { opacity: 0; transform: scale(2.4); }
+    to { opacity: 1; transform: scale(1); }
+  }
+  #levelup-sub {
+    font-size: 14px; color: #cde; margin: 8px 0 26px;
+    animation: fade-in 0.35s ease 0.18s backwards;
+  }
+  @keyframes fade-in { from { opacity: 0; } }
   /* 3枚は必ず横一列。折り返さず、狭い画面では札と文字の方を縮める
      (grid の 1fr + min-width:0 + clamp。flex-wrap だと 2+1 に割れる) */
   #skill-cards {
@@ -111,14 +123,28 @@
     font-family: inherit;
   }
   .skill-card:active { transform: scale(0.96); }
+  /* 1枚ずつ下から跳ねて出る。--in-delay はカード生成時に入る(レア度が高い
+     札ほど溜めが長い。openLevelUp() 参照)。backwards で遅延中は透明のまま */
+  .skill-card {
+    animation: card-in 0.45s cubic-bezier(0.34, 1.56, 0.64, 1) backwards;
+    animation-delay: var(--in-delay, 0s);
+  }
+  @keyframes card-in {
+    from { opacity: 0; transform: translateY(46px) scale(0.7); }
+    to { opacity: 1; transform: translateY(0) scale(1); }
+  }
   .skill-card .s-rarity {
     font-size: clamp(9px, 2.4vw, 11px); font-weight: bold;
     color: var(--rc, #b8c4d0); letter-spacing: 0.12em;
     margin-bottom: 4px;
   }
-  /* エピック以上は枠を淡く明滅させて「引き」の強さを見せる */
+  /* エピック以上は枠を淡く明滅させて「引き」の強さを見せる。
+     animation はショートハンドで card-in を上書きしてしまうため、
+     出現アニメもここに並記する(delay も2本ぶん指定) */
   .rarity-epic, .rarity-legendary {
-    animation: rarity-glow 1.2s ease-in-out infinite;
+    animation: card-in 0.45s cubic-bezier(0.34, 1.56, 0.64, 1) backwards,
+               rarity-glow 1.2s ease-in-out infinite;
+    animation-delay: var(--in-delay, 0s), var(--in-delay, 0s);
   }
   @keyframes rarity-glow {
     0%, 100% { box-shadow: 0 0 8px var(--rc); }
@@ -2245,14 +2271,23 @@ function openLevelUp() {
     pool.splice(pool.indexOf(id), 1);
   }
 
+  // 「だんだんレア度が上がる」見せ方: レア度の低い順に左から並べ、その順に
+  // 1枚ずつ出す。レア度が高い札ほど出る前の溜め(遅延の増分)を長くして、
+  // 最後の1枚への期待感を作る(rarityRank は CONFIG.level.rarity の定義順)
+  const rarityRank = (id) => Object.keys(CONFIG.level.rarity).indexOf(SKILLS[id].rarity);
+  levelupPicks.sort((a, b) => rarityRank(a) - rarityRank(b));
+
   skillCardsEl.innerHTML = '';
-  levelupPicks.forEach((id) => {
+  let inDelay = 0;
+  levelupPicks.forEach((id, i) => {
     const s = SKILLS[id];
     const r = CONFIG.level.rarity[s.rarity];
     const cur = level.taken[id] || 0;
+    if (i > 0) inDelay += 0.12 + rarityRank(id) * 0.14;
     const card = document.createElement('button');
     card.className = 'skill-card rarity-' + s.rarity;
     card.style.setProperty('--rc', r.color);   // 枠・ラベル・発光の色は CSS 側で var(--rc) 参照
+    card.style.setProperty('--in-delay', inDelay.toFixed(2) + 's');
     card.innerHTML =
       '<div class="s-rarity">' + r.label + '</div>' +
       '<div class="s-icon">' + s.icon + '</div>' +
