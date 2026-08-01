@@ -55,7 +55,7 @@
     background: linear-gradient(90deg, #2b8fd6, #7fd8ff);
     transition: width 0.12s;
   }
-  /* 満タン(バースト可能)は金色に点滅 */
+  /* チャージあり(次の攻撃が強化される)は金色に点滅 */
   #graze-bar-inner.full {
     background: linear-gradient(90deg, #f0a830, #fff0bb);
     animation: graze-full 0.55s ease-in-out infinite;
@@ -125,23 +125,6 @@
     margin-top: 6px; font-weight: bold;
   }
 
-  /* ---- バーストボタン(ゲージ満タンのときだけ出る)---- */
-  #burst-btn {
-    position: fixed; z-index: 6; display: none;
-    right: calc(22px + env(safe-area-inset-right));
-    bottom: calc(30px + env(safe-area-inset-bottom));
-    width: 92px; height: 92px; border-radius: 50%;
-    border: 2px solid rgba(255,242,200,0.9);
-    background: radial-gradient(circle at 50% 34%, #ffeaa8, #ef9f24);
-    color: #3a2400; font: 900 17px/1 'Helvetica Neue', Arial, sans-serif;
-    letter-spacing: 0.06em; cursor: pointer; touch-action: none;
-    animation: burst-pulse 0.9s ease-in-out infinite;
-  }
-  #burst-btn:active { transform: scale(0.93); }
-  @keyframes burst-pulse {
-    0%, 100% { box-shadow: 0 0 16px rgba(255,190,60,0.5); }
-    50% { box-shadow: 0 0 34px rgba(255,215,100,0.95); }
-  }
   #wave-banner {
     position: fixed; top: 30%; left: 0; right: 0;
     text-align: center; font-size: 34px; font-weight: bold;
@@ -247,7 +230,7 @@
       <div id="hp-bar-outer"><div id="hp-bar-inner"></div></div>
       <div id="hp-label">HP 100 / 100</div>
       <div id="graze-bar-outer"><div id="graze-bar-inner"></div></div>
-      <div id="graze-label">GRAZE 0 / 100</div>
+      <div id="graze-label">GRAZE で次の攻撃を強化</div>
       <div id="exp-bar-outer"><div id="exp-bar-inner"></div></div>
       <div id="exp-label">Lv 1</div>
     </div>
@@ -265,8 +248,6 @@
   <div id="joy-knob"></div>
 </div>
 
-<button id="burst-btn">BURST</button>
-
 <div id="levelup-screen">
   <div id="levelup-title">LEVEL UP!</div>
   <div id="levelup-sub">スキルを1つ選ぼう(キー: 1 / 2 / 3)</div>
@@ -279,8 +260,7 @@
   <p class="desc">
     移動: WASD / 矢印キー / 仮想ジョイスティック<br>
     立ち止まると最寄りの敵を自動攻撃!<br>
-    敵弾を<b>かすめる</b>とグレイズゲージが溜まる<br>
-    満タンで SPACE / BURST ボタン → 弾消し + 全方位射撃<br>
+    敵弾を<b>かすめる</b>(グレイズ)と次の攻撃が<b>2倍</b>に!<br>
     敵を倒して経験値ゲット!レベルアップでスキルを選ぼう<br>
     <b>全30ウェーブ</b>を勝ち抜けばチャプタークリア!次のチャプターが解放される
   </p>
@@ -359,21 +339,12 @@ const CONFIG = {
     rangeRingOpacity: 0.16,         // 同リングの普段の濃さ(視界の邪魔にならない薄さに)
     rangeRingFlashOpacity: 0.55,    // グレイズ成立の瞬間の濃さ
     rangeRingFlashDuration: 0.3,    // 成立後、普段の濃さへ戻るまでの時間(秒)
-    gaugeMax: 100,
-    gain: 8,                        // グレイズ1回の加算量(時間減衰はしない)
+    chargeMax: 3,                   // ためておけるチャージ数の上限(グレイズ1回 = チャージ1)
+    damageMul: 2,                   // チャージ消費時の攻撃倍率(次の攻撃1回ぶんが丸ごと2倍)
     fxCount: 12,                    // 同時に出せる白リングの数
     fxDuration: 0.24,               // 白リングの表示時間(秒)
     fxStartScale: 1.25,             // リングの初期・最終倍率(リング半径 0.7 に掛かる)。
     fxEndScale: 1.8,                // 足元リング(0.66)より外から outerRadius 付近まで広がる大きさ
-  },
-  // バースト: グレイズゲージを満タンで解放したときの効果
-  burst: {
-    duration: 1.5,                  // 攻撃速度アップの持続(秒)
-    fireRateMul: 2,                 // その間の攻撃速度倍率
-    shots: 16,                      // 発動時に撒く全方位弾の数
-    shotSpeed: 30,
-    shotDamage: 12,
-    fxScale: 3.2,                   // 発動リングの大きさ(graze の白リングを使い回す)
   },
   // レベル・スキル: 敵を倒すと経験値、レベルアップでスキル3択(アーチャー伝説方式)
   level: {
@@ -1126,20 +1097,18 @@ function deactivate(b) {
 function clearPool(pool) { pool.forEach(deactivate); }
 
 // =====================================================================
-// グレイズ・バースト
+// グレイズ・強化ショット
 // =====================================================================
-// 敵弾を「当たらないギリギリ」で通すとゲージが溜まり、満タンでバーストを撃てる。
+// 敵弾を「当たらないギリギリ」で通すとチャージが1つ増え、次の攻撃1回ぶん
+// (マルチ/バック/サイド込みの斉射全体)がチャージ1消費で2倍ダメージになる。
 // 判定そのものは updateProjectiles() の敵弾ループと updateLaser() に組み込んであり
 // (当たり判定のループは増やさない)、ここには「成立したら何が起きるか」だけを置く。
 const graze = {
-  gauge: 0,          // 0 〜 CONFIG.graze.gaugeMax
-  burstTimer: 0,     // >0 の間はバースト効果(攻撃速度アップ)が続いている
+  charges: 0,        // 0 〜 CONFIG.graze.chargeMax。firePlayerShot() が1つずつ消費する
   rangeFlash: 0,     // >0 の間は判定範囲リングを明るく表示(成立の瞬間にセット)
 };
 
-const burstReady = () => graze.gauge >= CONFIG.graze.gaugeMax;
-
-// グレイズ成立時に一瞬出す白いリング(バースト発動の光にも使い回す)
+// グレイズ成立時に一瞬出す白いリング(強化ショット発射の金色の光にも使い回す)
 const grazeFxPool = (function () {
   const geo = new THREE.RingGeometry(0.62, 0.78, 28);
   const items = [];
@@ -1185,34 +1154,18 @@ function updateGrazeFx(dt) {
 
 // グレイズ成立(敵弾・レーザーの判定側から呼ぶ)
 function onGraze() {
-  graze.gauge = Math.min(CONFIG.graze.gaugeMax, graze.gauge + CONFIG.graze.gain * level.stats.grazeMul);
+  graze.charges = Math.min(CONFIG.graze.chargeMax, graze.charges + 1);
   graze.rangeFlash = CONFIG.graze.rangeRingFlashDuration;
   const p = player.mesh.position;
   spawnGrazeFx(p.x, p.z, 1, 0xffffff);
   updateGrazeHud();
 }
 
-// バースト発動: 敵弾を全消去 + 全方位射撃 + 一定時間だけ攻撃速度アップ
-function tryBurst() {
-  if (state.phase !== 'playing' || !burstReady()) return;
-  const b = CONFIG.burst;
-  graze.gauge = 0;
-  graze.burstTimer = b.duration;
-  clearPool(bulletPool);
-  const origin = player.mesh.position.clone();
-  origin.y = 0.95;
-  for (let i = 0; i < b.shots; i++) {
-    const a = (i / b.shots) * Math.PI * 2;
-    const dir = new THREE.Vector3(Math.cos(a), 0, Math.sin(a));
-    fireArrow(origin, dir, 0, b.shotSpeed, b.shotDamage);   // 攻撃力・貫通スキルが乗る
-  }
-  spawnGrazeFx(origin.x, origin.z, b.fxScale, 0xffd76a);
-  updateGrazeHud();
-}
+// チャージ消費時の攻撃倍率。grazeup スキルで 2倍 → 2.5倍 → 3倍 と伸びる
+const grazeShotMul = () => 1 + (CONFIG.graze.damageMul - 1) * level.stats.grazeMul;
 
 function resetGraze() {
-  graze.gauge = 0;
-  graze.burstTimer = 0;
+  graze.charges = 0;
   graze.rangeFlash = 0;
   for (const fx of grazeFxPool) { fx.life = 0; fx.mesh.visible = false; }
   updateGrazeHud();
@@ -1278,7 +1231,7 @@ const dmgTextRight = new THREE.Vector3();
 function spawnDamageText(pos, amount, up, spread) {
   const C = CONFIG.damageText;
   // 空きが無ければ一番古い(残り時間が最短の)ものを奪う。
-  // バーストの同時ヒットでも「出たはずの数字が出ない」ことがないように
+  // マルチショットの同時ヒットでも「出たはずの数字が出ない」ことがないように
   let item = null;
   for (const it of dmgTextPool) {
     if (it.life <= 0) { item = it; break; }
@@ -1340,7 +1293,7 @@ const SKILLS = {
   pierce:    { icon: '🎯', name: '射抜きの極意', desc: '矢が敵を貫通する(+1体)', max: 2 },
   back:      { icon: '🔄', name: '背中の目',     desc: '後方にも矢を放つ', max: 1 },
   side:      { icon: '↔️', name: '両翼の構え',   desc: '左右にも矢を放つ', max: 1 },
-  grazeup:   { icon: '✨', name: '紙一重の妙',   desc: 'グレイズのゲージ増加 +50%', max: 2, value: 0.5 },
+  grazeup:   { icon: '✨', name: '紙一重の妙',   desc: 'グレイズ強化ショットの倍率アップ(2倍→2.5倍→3倍)', max: 2, value: 0.5 },
   regen:     { icon: '🌿', name: '命の芽吹き',   desc: '毎秒HPが1回復する', max: 2, value: 1 },
 };
 
@@ -1402,29 +1355,37 @@ function resetLevel() {
   updateExpHud();
 }
 
-// スキルを反映した自弾の発射。通常攻撃もバーストの全方位弾もここを通るので、
-// 攻撃力・貫通は常に一括で乗る
+// スキルを反映した自弾の発射。自弾はすべてここを通るので、攻撃力・貫通は常に一括で乗る。
+// mul はグレイズ強化ショットの倍率(省略時 1)
 const _arrowDir = new THREE.Vector3();
-function fireArrow(origin, dir, angle, speed, baseDamage) {
+function fireArrow(origin, dir, angle, speed, baseDamage, mul) {
   _arrowDir.copy(dir);
   if (angle) _arrowDir.applyAxisAngle(_axisY, angle);
-  const b = spawnFromPool(arrowPool, origin, _arrowDir, speed, baseDamage * level.stats.damageMul);
+  const b = spawnFromPool(arrowPool, origin, _arrowDir, speed, baseDamage * level.stats.damageMul * (mul || 1));
   if (b) b.pierce = level.stats.pierce;
   return b;
 }
 
-// 通常攻撃1回ぶん(マルチショットの扇 + バック/サイドショット)
+// 通常攻撃1回ぶん(マルチショットの扇 + バック/サイドショット)。
+// グレイズのチャージがあれば1つ消費し、この斉射全体が強化倍率になる
 function firePlayerShot(origin, dir) {
   const st = level.stats;
   const C = CONFIG.player;
+  let mul = 1;
+  if (graze.charges > 0) {
+    graze.charges--;
+    mul = grazeShotMul();
+    spawnGrazeFx(origin.x, origin.z, 1.6, 0xffd76a);   // 強化ショットの金色の光
+    updateGrazeHud();
+  }
   const count = 1 + st.multishot;
   for (let i = 0; i < count; i++) {
-    fireArrow(origin, dir, (i - (count - 1) / 2) * CONFIG.level.spread, C.arrowSpeed, C.arrowDamage);
+    fireArrow(origin, dir, (i - (count - 1) / 2) * CONFIG.level.spread, C.arrowSpeed, C.arrowDamage, mul);
   }
-  if (st.back) fireArrow(origin, dir, Math.PI, C.arrowSpeed, C.arrowDamage);
+  if (st.back) fireArrow(origin, dir, Math.PI, C.arrowSpeed, C.arrowDamage, mul);
   if (st.side) {
-    fireArrow(origin, dir, Math.PI / 2, C.arrowSpeed, C.arrowDamage);
-    fireArrow(origin, dir, -Math.PI / 2, C.arrowSpeed, C.arrowDamage);
+    fireArrow(origin, dir, Math.PI / 2, C.arrowSpeed, C.arrowDamage, mul);
+    fireArrow(origin, dir, -Math.PI / 2, C.arrowSpeed, C.arrowDamage, mul);
   }
 }
 
@@ -1838,21 +1799,9 @@ const keys = {};
 
 window.addEventListener('keydown', (e) => {
   keys[e.code] = true;
-  if (e.code === 'Space') {           // Space でバースト(ページのスクロールは止める)
-    e.preventDefault();
-    if (!e.repeat) tryBurst();
-  }
+  if (e.code === 'Space') e.preventDefault();   // ページのスクロールは止める
 });
 window.addEventListener('keyup', (e) => { keys[e.code] = false; });
-
-// バーストボタン(ゲージ満タンのときだけ updateGrazeHud() が表示する)。
-// canvas より上に居るので、押してもジョイスティックは出ない
-const burstBtn = document.getElementById('burst-btn');
-burstBtn.addEventListener('touchstart', (e) => {
-  e.preventDefault();                 // touchstart を止めると click は来ないので二重発動しない
-  tryBurst();
-}, { passive: false });
-burstBtn.addEventListener('click', tryBurst);
 
 const joyEl = document.getElementById('joystick');
 const joyKnob = document.getElementById('joy-knob');
@@ -1950,7 +1899,6 @@ function nearestEnemy() {
 
 function updatePlayer(dt) {
   readInput();
-  if (graze.burstTimer > 0) graze.burstTimer = Math.max(0, graze.burstTimer - dt);
   const moving = Math.hypot(input.x, input.z) > 0.05;
   player.moving = moving;
   const pos = player.mesh.position;
@@ -1971,8 +1919,8 @@ function updatePlayer(dt) {
       player.mesh.lookAt(target.mesh.position.x, 0, target.mesh.position.z);
       player.fireTimer -= dt;
       if (player.fireTimer <= 0) {
-        // バースト中・ラピッドショットは攻撃速度アップ
-        const rate = (graze.burstTimer > 0 ? CONFIG.burst.fireRateMul : 1) * level.stats.fireMul;
+        // ラピッドショットは攻撃速度アップ
+        const rate = level.stats.fireMul;
         player.fireTimer = CONFIG.player.fireInterval / rate;
         const dir = new THREE.Vector3()
           .subVectors(target.mesh.position, pos);
@@ -2157,16 +2105,15 @@ function updateHud() {
   updateGrazeHud();
 }
 
-// グレイズゲージ。満タンなら金色に点滅し、バーストボタンを出す
+// グレイズのチャージ表示。チャージがある間はバーが金色に点滅し、次の攻撃の倍率を出す
 function updateGrazeHud() {
-  const ready = burstReady();
-  grazeBar.style.width = (graze.gauge / CONFIG.graze.gaugeMax * 100) + '%';
-  grazeBar.classList.toggle('full', ready);
-  grazeLabel.classList.toggle('full', ready);
-  grazeLabel.textContent = ready
-    ? 'BURST READY!  SPACE'
-    : 'GRAZE ' + Math.floor(graze.gauge) + ' / ' + CONFIG.graze.gaugeMax;
-  burstBtn.style.display = ready && state.phase === 'playing' ? 'block' : 'none';
+  const charged = graze.charges > 0;
+  grazeBar.style.width = (graze.charges / CONFIG.graze.chargeMax * 100) + '%';
+  grazeBar.classList.toggle('full', charged);
+  grazeLabel.classList.toggle('full', charged);
+  grazeLabel.textContent = charged
+    ? '次の攻撃 ×' + (Math.round(grazeShotMul() * 10) / 10) + '  (チャージ ' + graze.charges + ')'
+    : 'GRAZE で次の攻撃を強化';
 }
 
 // 経験値バーと Lv 表示
@@ -2187,7 +2134,6 @@ function openLevelUp() {
   if (pool.length === 0) { level.pending = 0; return; }   // 全スキル取り切り
   state.phase = 'levelup';
   joyEnd();                          // 動きっぱなしで再開しないように入力を切る
-  updateGrazeHud();                  // バーストボタンを隠す
 
   // シャッフルして先頭 choices 件を提示(重複なし)
   for (let i = pool.length - 1; i > 0; i--) {
@@ -2280,7 +2226,6 @@ function gameOver() {
     + ' 到達 / Lv ' + level.lv + '<br>SCORE ' + state.score;
   gameoverScreen.style.display = 'flex';
   hudEl.style.display = 'none';
-  updateGrazeHud();                  // バーストボタンを隠す
   joyEnd();
 }
 
@@ -2307,7 +2252,6 @@ function chapterClear() {
   nextBtn.style.display = state.chapter + 1 < CONFIG.chapters.length ? '' : 'none';
   clearScreen.style.display = 'flex';
   hudEl.style.display = 'none';
-  updateGrazeHud();                  // バーストボタンを隠す
   joyEnd();
 }
 
