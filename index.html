@@ -2234,10 +2234,10 @@ let levelupPicks = [];   // いま表示中のスキルid(キー 1/2/3 用)
 const availableSkills = () =>
   Object.keys(SKILLS).filter((id) => (level.taken[id] || 0) < SKILLS[id].max);
 
-// レアリティの重み付き2段抽選: pool(未MAXスキルid)を段ごとに分け、
-// 候補が残っている段だけで重みを引いてから、その段の中は一様に選ぶ。
-// スキル数の偏り(数が多い段ほど出やすくなる)を防ぐため、段→スキルの順で引く
-function rollSkillId(pool) {
+// レアリティの重み付き抽選: pool(未MAXスキルid)を段ごとに分け、候補が
+// 残っている段だけで重みを引き、**その段の候補一覧**を返す。3択はこの1段の
+// 中からだけ作るので、提示されるスキルのレア度は毎回必ず揃う
+function rollRarityTier(pool) {
   const tiers = {};
   pool.forEach((id) => {
     const r = SKILLS[id].rarity;
@@ -2248,12 +2248,9 @@ function rollSkillId(pool) {
   let roll = Math.random() * total;
   for (const r in tiers) {
     roll -= CONFIG.level.rarity[r].weight;
-    if (roll < 0) {
-      const ids = tiers[r];
-      return ids[(Math.random() * ids.length) | 0];
-    }
+    if (roll < 0) return tiers[r];
   }
-  return pool[pool.length - 1];     // 浮動小数の端数の保険
+  return tiers[Object.keys(tiers)[0]];   // 浮動小数の端数の保険
 }
 
 function openLevelUp() {
@@ -2263,19 +2260,21 @@ function openLevelUp() {
   joyEnd();                          // 動きっぱなしで再開しないように入力を切る
   updateGrazeHud();                  // バーストボタンを隠す
 
-  // 重み付き抽選を choices 回(重複なし)
-  levelupPicks = [];
-  while (levelupPicks.length < CONFIG.level.choices && pool.length > 0) {
-    const id = rollSkillId(pool);
-    levelupPicks.push(id);
-    pool.splice(pool.indexOf(id), 1);
+  // 段を1つ引き、その段の中からシャッフルで choices 件。段の候補が3未満の
+  // とき(エピック以上や終盤の取り切り)はある分だけ出す(レア度は崩さない)
+  const tierPool = rollRarityTier(pool);
+  for (let i = tierPool.length - 1; i > 0; i--) {
+    const j = (Math.random() * (i + 1)) | 0;
+    [tierPool[i], tierPool[j]] = [tierPool[j], tierPool[i]];
   }
+  levelupPicks = tierPool.slice(0, CONFIG.level.choices);
 
-  // 「だんだんレア度が上がる」見せ方: レア度の低い順に左から並べ、その順に
-  // 1枚ずつ出す。レア度が高い札ほど出る前の溜め(遅延の増分)を長くして、
-  // 最後の1枚への期待感を作る(rarityRank は CONFIG.level.rarity の定義順)
+  // 札の枚数に合わせて列数と全体幅を絞る(1〜2枚でも中央で自然な大きさ)
+  skillCardsEl.style.gridTemplateColumns = 'repeat(' + levelupPicks.length + ', 1fr)';
+  skillCardsEl.style.maxWidth = (240 * levelupPicks.length) + 'px';
+
+  // 出現演出の溜め: レア度が高い段ほど1枚ごとの間隔を長くして期待感を作る
   const rarityRank = (id) => Object.keys(CONFIG.level.rarity).indexOf(SKILLS[id].rarity);
-  levelupPicks.sort((a, b) => rarityRank(a) - rarityRank(b));
 
   skillCardsEl.innerHTML = '';
   let inDelay = 0;
