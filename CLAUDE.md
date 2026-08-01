@@ -73,6 +73,10 @@ GitHub Pages で公開する前提の、ビルド不要な単一 `index.html` �
     `graze.innerRadius` は下限として置いてあるが、実際の被弾半径(プレイヤー半径+弾半径)の方が外なので
     通常は効かない
   - 演出は `grazeFxPool`(白いリング)。プールなのでフレーム中に new しない。バーストの発動光にも使い回す
+  - **判定範囲の常時表示**: プレイヤーの足元に `graze.outerRadius` と同半径の薄い水色リング
+    (`player.parts.grazeRing`。プレイヤーの `group` の子なので位置合わせ不要)。
+    グレイズ成立で `graze.rangeFlash` がセットされ、`updatePlayerAnimation()` が
+    `rangeRingFlashOpacity` から普段の `rangeRingOpacity` へ線形に戻す
   - ゲージは減衰しない。満タンで `updateGrazeHud()` がゲージを金色に点滅させ、バーストボタンを出す
   - バースト: Space キー / 右下のバーストボタンで発動。敵弾を全消去 + 全方位に自弾16発 +
     `burst.duration` 秒だけ攻撃速度 `burst.fireRateMul` 倍。発動でゲージは 0
