@@ -103,13 +103,27 @@
     min-width: 0;
     display: flex; flex-direction: column; align-items: center;
     background: linear-gradient(180deg, rgba(40,48,88,0.95), rgba(22,26,52,0.95));
-    border: 2px solid rgba(160,190,255,0.45);
+    /* --rc はカード生成時に CONFIG.level.rarity の色が入る */
+    border: 2px solid var(--rc, rgba(160,190,255,0.45));
     border-radius: 14px;
     padding: clamp(10px, 2.6vw, 16px) clamp(6px, 1.6vw, 12px);
     color: #fff; text-align: center; cursor: pointer;
     font-family: inherit;
   }
   .skill-card:active { transform: scale(0.96); }
+  .skill-card .s-rarity {
+    font-size: clamp(9px, 2.4vw, 11px); font-weight: bold;
+    color: var(--rc, #b8c4d0); letter-spacing: 0.12em;
+    margin-bottom: 4px;
+  }
+  /* エピック以上は枠を淡く明滅させて「引き」の強さを見せる */
+  .rarity-epic, .rarity-legendary {
+    animation: rarity-glow 1.2s ease-in-out infinite;
+  }
+  @keyframes rarity-glow {
+    0%, 100% { box-shadow: 0 0 8px var(--rc); }
+    50% { box-shadow: 0 0 24px var(--rc); }
+  }
   .skill-card .s-icon { font-size: clamp(24px, 6.4vw, 34px); line-height: 1.2; }
   .skill-card .s-name {
     font-size: clamp(12px, 3.4vw, 15px); font-weight: bold; color: #ffd76a;
@@ -381,6 +395,15 @@ const CONFIG = {
     expGrowth: 1.35,                // レベルごとの必要経験値の倍率
     choices: 3,                     // レベルアップで提示するスキル数
     spread: 0.16,                   // マルチショットの矢同士の角度(ラジアン)
+    // スキルのレアリティ(4段階)。3択の各枠は「重みで段を引く → その段の
+    // 未MAXスキルから1つ選ぶ」2段抽選。候補が残っていない段は抽選から外して
+    // 重みを再配分するので、段が空でも壊れない(legendary は当面スキルなしでよい)
+    rarity: {
+      common:    { weight: 57, label: 'コモン',         color: '#b8c4d0' },
+      rare:      { weight: 28, label: 'レア',           color: '#4da3ff' },
+      epic:      { weight: 11, label: 'エピック',       color: '#c76bff' },
+      legendary: { weight: 4,  label: 'レジェンダリー', color: '#ffb64d' },
+    },
   },
   // 敵の頭上に出すHPバー(サイズはワールド単位。平行投影なので画面上の大きさは常に一定)
   hpBar: {
@@ -1331,17 +1354,20 @@ function resetDamageTexts() {
 // まとめて再計算するので、取得順や重ね取りを個別に気にしなくてよい
 // 名前は効果そのままの直訳を避け、技名らしい呼び名にしている。
 // 何が起きるかは desc が全部書いているので、name 側は雰囲気を優先してよい
+// rarity は CONFIG.level.rarity のキー(common / rare / epic / legendary)。
+// 積み上げの数値系は common、挙動が変わる・ビルドの軸になるものは rare、
+// 1回で戦い方が変わるものは epic。legendary は今後の追加用に空けてある
 const SKILLS = {
-  multishot: { icon: '🏹', name: '乱れ撃ち',     desc: '正面の矢が1本増える(扇状に発射)', max: 3 },
-  power:     { icon: '💥', name: '剛弓の一撃',   desc: '矢の攻撃力 +25%', max: 5, value: 0.25 },
-  rapid:     { icon: '⚡', name: '疾風の指',     desc: '攻撃速度 +20%', max: 5, value: 0.2 },
-  boots:     { icon: '👢', name: '韋駄天の脚',   desc: '移動速度 +10%', max: 3, value: 0.1 },
-  vital:     { icon: '❤️', name: '勇者の血脈',   desc: '最大HP +25(取得時に25回復)', max: 4, value: 25 },
-  pierce:    { icon: '🎯', name: '射抜きの極意', desc: '矢が敵を貫通する(+1体)', max: 2 },
-  back:      { icon: '🔄', name: '背中の目',     desc: '後方にも矢を放つ', max: 1 },
-  side:      { icon: '↔️', name: '両翼の構え',   desc: '左右にも矢を放つ', max: 1 },
-  grazeup:   { icon: '✨', name: '紙一重の妙',   desc: 'グレイズのゲージ増加 +50%', max: 2, value: 0.5 },
-  regen:     { icon: '🌿', name: '命の芽吹き',   desc: '毎秒HPが1回復する', max: 2, value: 1 },
+  multishot: { icon: '🏹', name: '乱れ撃ち',     desc: '正面の矢が1本増える(扇状に発射)', max: 3, rarity: 'rare' },
+  power:     { icon: '💥', name: '剛弓の一撃',   desc: '矢の攻撃力 +25%', max: 5, value: 0.25, rarity: 'common' },
+  rapid:     { icon: '⚡', name: '疾風の指',     desc: '攻撃速度 +20%', max: 5, value: 0.2, rarity: 'common' },
+  boots:     { icon: '👢', name: '韋駄天の脚',   desc: '移動速度 +10%', max: 3, value: 0.1, rarity: 'common' },
+  vital:     { icon: '❤️', name: '勇者の血脈',   desc: '最大HP +25(取得時に25回復)', max: 4, value: 25, rarity: 'common' },
+  pierce:    { icon: '🎯', name: '射抜きの極意', desc: '矢が敵を貫通する(+1体)', max: 2, rarity: 'epic' },
+  back:      { icon: '🔄', name: '背中の目',     desc: '後方にも矢を放つ', max: 1, rarity: 'rare' },
+  side:      { icon: '↔️', name: '両翼の構え',   desc: '左右にも矢を放つ', max: 1, rarity: 'rare' },
+  grazeup:   { icon: '✨', name: '紙一重の妙',   desc: 'グレイズのゲージ増加 +50%', max: 2, value: 0.5, rarity: 'rare' },
+  regen:     { icon: '🌿', name: '命の芽吹き',   desc: '毎秒HPが1回復する', max: 2, value: 1, rarity: 'common' },
 };
 
 const level = {
@@ -2182,6 +2208,28 @@ let levelupPicks = [];   // いま表示中のスキルid(キー 1/2/3 用)
 const availableSkills = () =>
   Object.keys(SKILLS).filter((id) => (level.taken[id] || 0) < SKILLS[id].max);
 
+// レアリティの重み付き2段抽選: pool(未MAXスキルid)を段ごとに分け、
+// 候補が残っている段だけで重みを引いてから、その段の中は一様に選ぶ。
+// スキル数の偏り(数が多い段ほど出やすくなる)を防ぐため、段→スキルの順で引く
+function rollSkillId(pool) {
+  const tiers = {};
+  pool.forEach((id) => {
+    const r = SKILLS[id].rarity;
+    (tiers[r] || (tiers[r] = [])).push(id);
+  });
+  let total = 0;
+  for (const r in tiers) total += CONFIG.level.rarity[r].weight;
+  let roll = Math.random() * total;
+  for (const r in tiers) {
+    roll -= CONFIG.level.rarity[r].weight;
+    if (roll < 0) {
+      const ids = tiers[r];
+      return ids[(Math.random() * ids.length) | 0];
+    }
+  }
+  return pool[pool.length - 1];     // 浮動小数の端数の保険
+}
+
 function openLevelUp() {
   const pool = availableSkills();
   if (pool.length === 0) { level.pending = 0; return; }   // 全スキル取り切り
@@ -2189,20 +2237,24 @@ function openLevelUp() {
   joyEnd();                          // 動きっぱなしで再開しないように入力を切る
   updateGrazeHud();                  // バーストボタンを隠す
 
-  // シャッフルして先頭 choices 件を提示(重複なし)
-  for (let i = pool.length - 1; i > 0; i--) {
-    const j = (Math.random() * (i + 1)) | 0;
-    [pool[i], pool[j]] = [pool[j], pool[i]];
+  // 重み付き抽選を choices 回(重複なし)
+  levelupPicks = [];
+  while (levelupPicks.length < CONFIG.level.choices && pool.length > 0) {
+    const id = rollSkillId(pool);
+    levelupPicks.push(id);
+    pool.splice(pool.indexOf(id), 1);
   }
-  levelupPicks = pool.slice(0, CONFIG.level.choices);
 
   skillCardsEl.innerHTML = '';
   levelupPicks.forEach((id) => {
     const s = SKILLS[id];
+    const r = CONFIG.level.rarity[s.rarity];
     const cur = level.taken[id] || 0;
     const card = document.createElement('button');
-    card.className = 'skill-card';
+    card.className = 'skill-card rarity-' + s.rarity;
+    card.style.setProperty('--rc', r.color);   // 枠・ラベル・発光の色は CSS 側で var(--rc) 参照
     card.innerHTML =
+      '<div class="s-rarity">' + r.label + '</div>' +
       '<div class="s-icon">' + s.icon + '</div>' +
       '<div class="s-name">' + s.name + '</div>' +
       '<div class="s-desc">' + s.desc + '</div>' +

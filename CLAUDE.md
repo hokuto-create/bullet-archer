@@ -96,6 +96,13 @@ GitHub Pages で公開する前提の、ビルド不要な単一 `index.html` �
     選択を閉じた `closeLevelUp()` が次のウェーブを開始する(ソフトロック防止)
   - スキルはデータ駆動: `SKILLS` にオブジェクトを足し、`recomputeSkillStats()` に効果を1行足す。
     効果は取得回数(`level.taken`)から毎回まとめて再計算するので取得順を気にしない
+  - **レアリティ4段階**(common / rare / epic / legendary。重み・色・ラベルは `CONFIG.level.rarity`):
+    各スキルは `SKILLS` の `rarity` フィールドで段を持つ。3択の各枠は `rollSkillId()` の
+    **2段抽選**(重みで段を引く→その段の未MAXスキルから一様に選ぶ)。段→スキルの順で引くので
+    スキル数が多い段が出やすくなることはなく、候補が尽きた段は抽選から外れて重みが再配分される
+    (legendary は現状スキルなしの予約枠だが、`rarity: 'legendary'` のスキルを足すだけで機能する)。
+    カードは枠・レアリティラベルが段の色になり(生成時に CSS 変数 `--rc` へ流し込む)、
+    epic 以上は枠が明滅する
   - スキル一覧(id: 表示名): `multishot` 乱れ撃ち(扇状+1本)/ `power` 剛弓の一撃(+25%)/
     `rapid` 疾風の指(攻撃速度+20%)/ `boots` 韋駄天の脚(移動+10%)/
     `vital` 勇者の血脈(最大HP+25。`player.maxHp` を増やす。`CONFIG.player.maxHp` は初期値)/
