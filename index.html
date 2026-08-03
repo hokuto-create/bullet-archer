@@ -402,6 +402,39 @@ const CONFIG = {
       legendary: { weight: 1, label: 'レジェンダリー', color: '#ffb64d' },
     },
   },
+  // 召喚攻撃(星・霊剣・守護者)とエレメント。スキルで手に入る追加攻撃手段の数値はここに集約
+  arts: {
+    // 星: 落下地点に予兆円 → 火球が落ちて範囲ダメージ
+    star: {
+      damage: 32, radius: 3.0,
+      telegraph: 0.55,                // 予兆円が広がる時間(秒)
+      fallTime: 0.3, fallHeight: 13,  // 火球の落下時間と開始高度
+      pool: 10,
+      twinDelay: 0.3, twinOffset: 1.4, // 双つ星(2発目の遅れと着弾のずらし幅)
+      color: 0xffc04d,                // 無属性のときの色(属性があれば属性色になる)
+    },
+    // 霊剣: ランダムな敵の頭上から剣が落ちて単体ダメージ(落下中は対象を追う)
+    sword: {
+      damage: 26, fallTime: 0.22, fallHeight: 9, pool: 14, color: 0xbfe8ff,
+    },
+    // 守護者: プレイヤーの周りを回るお供。属性ごとに1種で、雷だけ即着弾の落雷を使う
+    guardian: {
+      orbitRadius: 1.7, orbitSpeed: 0.9, height: 1.5,
+      orbSpeed: 20, orbDamage: 9, orbInterval: 1.5,   // 弾を撃つ守護者(炎・氷・毒)
+      boltDamage: 13, boltInterval: 2.4,              // 雷の守護者
+      lv2DamageMul: 1.5, lv2IntervalMul: 0.75,        // 重ね取り(Lv2)の強化幅
+      pool: 20,                                       // 守護者の弾のプール
+    },
+    // エレメント効果。継続ダメージは「当てた攻撃の基礎ダメージ」に対する割合
+    // (強い攻撃に乗せた属性ほど痛くなる)。雷だけは状態異常ではなく即時の連鎖
+    elements: {
+      fire:    { duration: 2, tickEvery: 0.5, tickPct: 0.25 },  // 燃焼
+      ice:     { freeze: 1.0, cooldown: 2.5 },                  // 凍結(再凍結までの間隔つき)
+      thunder: { pct: 0.4, radius: 3.5 },                       // 連鎖する電撃
+      poison:  { tickEvery: 1, tickPct: 0.15 },                 // 毒(倒れるまで続く)
+    },
+    boltPool: 12,                     // 落雷・連鎖の光柱エフェクトの数
+  },
   // 敵の頭上に出すHPバー(サイズはワールド単位。平行投影なので画面上の大きさは常に一定)
   hpBar: {
     width: 1.5, height: 0.15,       // 通常敵のバー
@@ -1072,6 +1105,7 @@ function damagePlayer(amount) {
   if (player.invincible > 0 || state.phase !== 'playing') return;
   player.hp -= amount;
   player.invincible = CONFIG.player.hitInvincible;
+  onPlayerHitArts();                // 報復の剣(無敵中に弾かれた分では発動しない)
   updateHud();
   if (player.hp <= 0) {
     player.hp = 0;
@@ -1090,9 +1124,10 @@ function makePool(size, buildMesh) {
     scene.add(mesh);
     // near/grazed: グレイズ判定用。至近を通ったか / もう数えたか(1発で何度も溜まらないように)
     // pierce/hits: 貫通スキル用。残り貫通数 / もうヒットした敵(多重ヒット防止。Set は使い回す)
+    // elems: 自弾のエレメント(命中時に applyElems が読む。null なら無属性)
     items.push({
       mesh, active: false, vel: new THREE.Vector3(), damage: 0, life: 0,
-      near: false, grazed: false, pierce: 0, hits: null,
+      near: false, grazed: false, pierce: 0, hits: null, elems: null,
     });
   }
   return items;
@@ -1128,6 +1163,7 @@ function spawnFromPool(pool, pos, dir, speed, damage) {
     b.near = false;
     b.grazed = false;
     b.pierce = 0;
+    b.elems = null;
     if (b.hits) b.hits.clear();
     if (pool === arrowPool) {
       b.mesh.lookAt(pos.clone().add(dir));
@@ -1207,6 +1243,7 @@ function onGraze() {
   graze.rangeFlash = CONFIG.graze.rangeRingFlashDuration;
   const p = player.mesh.position;
   spawnGrazeFx(p.x, p.z, 1, 0xffffff);
+  onGrazeArts();                    // 見切りの星(グレイズ成立トリガー)
   updateGrazeHud();
 }
 
@@ -1347,6 +1384,42 @@ const SKILLS = {
   side:      { icon: '↔️', name: '両翼の構え',   desc: '左右にも矢を放つ', max: 1, rarity: 'rare' },
   grazeup:   { icon: '✨', name: '紙一重の妙',   desc: 'グレイズ強化ショットの倍率アップ(2倍→2.5倍→3倍)', max: 2, value: 0.5, rarity: 'rare' },
   regen:     { icon: '🌿', name: '命の芽吹き',   desc: '毎秒HPが1回復する', max: 2, value: 1, rarity: 'common' },
+
+  // --- 矢のエレメント(通常攻撃に属性を乗せる。全部同時に持てる) ---
+  arrow_fire:    { icon: '🔥', name: '火矢の口伝', desc: '矢に炎属性: 射た敵を燃やして継続ダメージ', max: 1, rarity: 'rare' },
+  arrow_ice:     { icon: '❄️', name: '氷矢の口伝', desc: '矢に氷属性: 射た敵を短時間凍らせる', max: 1, rarity: 'rare' },
+  arrow_thunder: { icon: '⚡', name: '雷矢の口伝', desc: '矢に雷属性: 命中時、周囲の敵へ電撃が連鎖', max: 1, rarity: 'rare' },
+  arrow_poison:  { icon: '🧪', name: '毒矢の口伝', desc: '矢に毒属性: 射た敵は倒れるまで毎秒ダメージ', max: 1, rarity: 'rare' },
+
+  // --- 召喚攻撃: 星(範囲)。family の生成スキルを1つでも持つと requires の属性・強化が抽選に並ぶ ---
+  star_attack:  { icon: '☄️', name: '追撃の星',   desc: '攻撃時12%の確率で星が落ちて範囲ダメージ(重ねて20%→28%)', max: 3, family: 'star', chances: [0.12, 0.2, 0.28], rarity: 'rare' },
+  star_kill:    { icon: '☄️', name: '弔いの星',   desc: '敵を倒すと25%の確率でその場に星が落ちる(重ねて40%→55%)', max: 3, family: 'star', chances: [0.25, 0.4, 0.55], rarity: 'rare' },
+  star_graze:   { icon: '☄️', name: '見切りの星', desc: 'グレイズが成立するたび、必ず星が落ちる', max: 1, family: 'star', rarity: 'epic' },
+  star_twin:    { icon: '🌠', name: '双つ星',     desc: '星が必ず2発連続で落ちるようになる', max: 1, requires: 'star', rarity: 'legendary' },
+  star_fire:    { icon: '🔥', name: '炎の星',     desc: '星に炎属性: 当てた敵を燃やして継続ダメージ', max: 1, requires: 'star', rarity: 'rare' },
+  star_ice:     { icon: '❄️', name: '氷の星',     desc: '星に氷属性: 当てた敵を短時間凍らせる', max: 1, requires: 'star', rarity: 'rare' },
+  star_thunder: { icon: '⚡', name: '雷の星',     desc: '星に雷属性: 命中時、周囲の敵へ電撃が連鎖', max: 1, requires: 'star', rarity: 'rare' },
+  star_poison:  { icon: '🧪', name: '毒の星',     desc: '星に毒属性: 当てた敵は倒れるまで毎秒ダメージ', max: 1, requires: 'star', rarity: 'rare' },
+
+  // --- 召喚攻撃: 霊剣(単体) ---
+  sword_rain:    { icon: '🗡️', name: '剣の雨',   desc: '5秒ごとに霊剣がランダムな敵へ降る(重ねて4秒→3秒)', max: 3, family: 'sword', intervals: [5, 4, 3], rarity: 'rare' },
+  sword_attack:  { icon: '🗡️', name: '追影の剣', desc: '攻撃時12%の確率で霊剣が敵に降る(重ねて20%→28%)', max: 3, family: 'sword', chances: [0.12, 0.2, 0.28], rarity: 'rare' },
+  sword_revenge: { icon: '🗡️', name: '報復の剣', desc: '被弾すると霊剣3本で反撃する', max: 1, family: 'sword', rarity: 'epic' },
+  sword_double:  { icon: '⚔️', name: '剣嵐',     desc: '一度に降る霊剣が1本増える', max: 2, requires: 'sword', rarity: 'epic' },
+  sword_fire:    { icon: '🔥', name: '炎の霊剣', desc: '霊剣に炎属性: 貫いた敵を燃やして継続ダメージ', max: 1, requires: 'sword', rarity: 'rare' },
+  sword_ice:     { icon: '❄️', name: '氷の霊剣', desc: '霊剣に氷属性: 貫いた敵を短時間凍らせる', max: 1, requires: 'sword', rarity: 'rare' },
+  sword_thunder: { icon: '⚡', name: '雷の霊剣', desc: '霊剣に雷属性: 命中時、周囲の敵へ電撃が連鎖', max: 1, requires: 'sword', rarity: 'rare' },
+  sword_poison:  { icon: '🧪', name: '毒の霊剣', desc: '霊剣に毒属性: 貫いた敵は倒れるまで毎秒ダメージ', max: 1, requires: 'sword', rarity: 'rare' },
+
+  // --- 召喚攻撃: 守護者(常時のお供)。属性そのものが本体で、重ね取りでその守護者が強化される ---
+  guard_fire:    { icon: '🔥', name: '炎の守護者', desc: '燃える火球を放つお供を召喚。移動中も戦ってくれる(重ねて強化)', max: 2, family: 'guardian', rarity: 'epic' },
+  guard_ice:     { icon: '❄️', name: '氷の守護者', desc: '敵を凍らせる氷弾を放つお供を召喚(重ねて強化)', max: 2, family: 'guardian', rarity: 'epic' },
+  guard_thunder: { icon: '⚡', name: '雷の守護者', desc: 'ランダムな敵へ連鎖する落雷を放つお供を召喚(重ねて強化)', max: 2, family: 'guardian', rarity: 'epic' },
+  guard_poison:  { icon: '🧪', name: '毒の守護者', desc: '毒弾を放つお供を召喚。毒は倒れるまで毎秒削る(重ねて強化)', max: 2, family: 'guardian', rarity: 'epic' },
+  guard_bond:    { icon: '🤝', name: '守護者の絆', desc: '守護者の攻撃速度 +25%', max: 3, value: 0.25, requires: 'guardian', rarity: 'rare' },
+
+  // --- 召喚攻撃の共通強化 ---
+  summon_power:  { icon: '📖', name: '召喚の心得', desc: '星・霊剣・守護者のダメージ +30%', max: 3, value: 0.3, requires: 'summon', rarity: 'rare' },
 };
 
 const level = {
@@ -1360,6 +1433,9 @@ const level = {
 
 function recomputeSkillStats() {
   const n = (id) => level.taken[id] || 0;
+  // ファミリーごとの属性リスト(取った属性は全部スタックする)と、確率系スキルの現在値
+  const elems = (prefix) => ['fire', 'ice', 'thunder', 'poison'].filter((el) => n(prefix + '_' + el) > 0);
+  const chance = (id) => (n(id) > 0 ? SKILLS[id].chances[n(id) - 1] : 0);
   level.stats = {
     damageMul: 1 + SKILLS.power.value * n('power'),
     fireMul: 1 + SKILLS.rapid.value * n('rapid'),
@@ -1370,6 +1446,24 @@ function recomputeSkillStats() {
     side: n('side') > 0,
     grazeMul: 1 + SKILLS.grazeup.value * n('grazeup'),
     regen: SKILLS.regen.value * n('regen'),   // 毎秒回復量
+    // --- 召喚攻撃・エレメント ---
+    arrowElems: elems('arrow'),               // 矢に乗る属性
+    summonMul: 1 + SKILLS.summon_power.value * n('summon_power'),
+    star: {
+      onAttack: chance('star_attack'),        // 攻撃時に星が落ちる確率
+      onKill: chance('star_kill'),            // 撃破時に星が落ちる確率
+      onGraze: n('star_graze') > 0,
+      twin: n('star_twin') > 0,
+      elems: elems('star'),
+    },
+    sword: {
+      interval: n('sword_rain') > 0 ? SKILLS.sword_rain.intervals[n('sword_rain') - 1] : 0,
+      onAttack: chance('sword_attack'),
+      revenge: n('sword_revenge') > 0,
+      count: 1 + n('sword_double'),           // 一度に降る本数
+      elems: elems('sword'),
+    },
+    guardianRate: 1 + SKILLS.guard_bond.value * n('guard_bond'),
   };
 }
 recomputeSkillStats();
@@ -1395,6 +1489,7 @@ function takeSkill(id) {
     player.hp = Math.min(player.maxHp, player.hp + SKILLS.vital.value);
     updateHud();
   }
+  if (SKILLS[id].family === 'guardian') syncGuardians();   // お供を場に出す/強化を反映
 }
 
 function resetLevel() {
@@ -1414,7 +1509,10 @@ function fireArrow(origin, dir, angle, speed, baseDamage, mul) {
   _arrowDir.copy(dir);
   if (angle) _arrowDir.applyAxisAngle(_axisY, angle);
   const b = spawnFromPool(arrowPool, origin, _arrowDir, speed, baseDamage * level.stats.damageMul * (mul || 1));
-  if (b) b.pierce = level.stats.pierce;
+  if (b) {
+    b.pierce = level.stats.pierce;
+    b.elems = level.stats.arrowElems;   // 矢のエレメント(命中時に applyElems が読む)
+  }
   return b;
 }
 
@@ -1439,6 +1537,426 @@ function firePlayerShot(origin, dir) {
     fireArrow(origin, dir, Math.PI / 2, C.arrowSpeed, C.arrowDamage, mul);
     fireArrow(origin, dir, -Math.PI / 2, C.arrowSpeed, C.arrowDamage, mul);
   }
+  onPlayerAttackArts();               // 攻撃時トリガーの星・霊剣
+}
+
+// =====================================================================
+// 召喚攻撃(星・霊剣・守護者)・エレメント
+// =====================================================================
+// スキルで手に入る、矢とは独立した攻撃手段。
+// - 星: 攻撃時/撃破時/グレイズ時のトリガーで敵の足元に落ちる範囲攻撃
+// - 霊剣: 周期/攻撃時/被弾時のトリガーでランダムな敵に降る単体攻撃
+// - 守護者: 属性ごとのお供。移動中でも自分のタイマーで攻撃する
+// エレメント(炎・氷・雷・毒)はファミリーごとに別々に付き、複数取れば全部乗る。
+// ダメージはすべて damageEnemy() 経由なので、数値表示・ウェーブクリア判定はそのまま効く
+
+const ELEM_COLORS = { fire: 0xff7a3c, ice: 0x7ad4ff, thunder: 0xffe066, poison: 0x8ce34c };
+// 属性付きの召喚は属性色に染める(複数属性なら最後の1つ。無属性は fallback)
+const artColor = (elems, fallback) =>
+  (elems && elems.length ? ELEM_COLORS[elems[elems.length - 1]] : fallback);
+
+// --- エレメント効果 ---
+// base はその攻撃の基礎ダメージ。継続ダメージは base に対する割合なので、
+// 同じ属性を強い攻撃に乗せるほど痛くなる。雷だけは状態異常ではなく即時の連鎖ダメージ
+// (連鎖ダメージ自体は属性を持たない = 連鎖が連鎖を呼んで無限に走ることはない)。
+// 状態異常は敵側のフィールド(burn*/freeze*/poison*)に書き、updateEnemy() が進める
+function applyElems(enemy, base, elems) {
+  if (!elems || elems.length === 0) return;
+  const E = CONFIG.arts.elements;
+  for (const el of elems) {
+    if (el === 'fire') {
+      enemy.burnT = E.fire.duration;
+      enemy.burnDmg = Math.max(enemy.burnDmg, base * E.fire.tickPct);
+    } else if (el === 'ice') {
+      if (enemy.freezeCd <= 0) {
+        enemy.freezeT = E.ice.freeze;
+        enemy.freezeCd = E.ice.cooldown;
+      }
+    } else if (el === 'poison') {
+      enemy.poisonDmg = Math.max(enemy.poisonDmg, base * E.poison.tickPct);
+    } else if (el === 'thunder') {
+      chainLightning(enemy, base * E.thunder.pct);
+    }
+  }
+}
+
+function chainLightning(from, dmg) {
+  const T = CONFIG.arts.elements.thunder;
+  const pos = from.mesh.position;
+  // damageEnemy が enemies を splice するのでスナップショットを回す
+  for (const other of enemies.slice()) {
+    if (other === from || !other.hpBar) continue;
+    if (other.mesh.position.distanceToSquared(pos) > T.radius * T.radius) continue;
+    spawnBolt(other.mesh.position.x, other.mesh.position.z, ELEM_COLORS.thunder, 0.5);
+    damageEnemy(other, dmg);
+  }
+}
+
+// --- 落雷・連鎖の光柱エフェクト(一瞬で薄れる縦の柱) ---
+const boltPool = (function () {
+  const geo = new THREE.CylinderGeometry(0.07, 0.16, 10, 6, 1, true);
+  const items = [];
+  for (let i = 0; i < CONFIG.arts.boltPool; i++) {
+    const mesh = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({
+      color: 0xffe066, transparent: true, opacity: 0, depthWrite: false,
+    }));
+    mesh.visible = false;
+    scene.add(mesh);
+    items.push({ mesh, life: 0, max: 0.18 });
+  }
+  return items;
+})();
+
+function spawnBolt(x, z, color, width) {
+  for (const b of boltPool) {
+    if (b.life > 0) continue;
+    b.life = b.max;
+    b.mesh.visible = true;
+    b.mesh.position.set(x, 5, z);
+    b.mesh.scale.set(width || 1, 1, width || 1);
+    b.mesh.material.color.setHex(color);
+    b.mesh.material.opacity = 0.9;
+    return;
+  }
+}
+
+function updateBolts(dt) {
+  for (const b of boltPool) {
+    if (b.life <= 0) continue;
+    b.life -= dt;
+    if (b.life <= 0) { b.mesh.visible = false; continue; }
+    b.mesh.material.opacity = 0.9 * (b.life / b.max);
+  }
+}
+
+// --- 星 ---
+// 予兆円(敵の赤リングと同じ文法。こちらの攻撃なので金色/属性色)→ 火球落下 → 範囲ダメージ
+const starPool = (function () {
+  const S = CONFIG.arts.star;
+  const items = [];
+  for (let i = 0; i < S.pool; i++) {
+    const ring = new THREE.Mesh(
+      new THREE.RingGeometry(0.9, 1.0, 40),
+      new THREE.MeshBasicMaterial({ color: S.color, transparent: true, opacity: 0.8, side: THREE.DoubleSide })
+    );
+    ring.rotation.x = -Math.PI / 2;
+    ring.position.y = 0.05;
+    ring.visible = false;
+    scene.add(ring);
+    const ball = new THREE.Mesh(
+      new THREE.SphereGeometry(0.5, 12, 9),
+      new THREE.MeshBasicMaterial({ color: S.color })
+    );
+    ball.visible = false;
+    scene.add(ball);
+    items.push({ active: false, phase: 'tele', t: 0, delay: 0, x: 0, z: 0, elems: null, ring, ball });
+  }
+  return items;
+})();
+
+function spawnStar(x, z, delay) {
+  const h = CONFIG.arena.half - 1;
+  x = clamp(x, -h, h);
+  z = clamp(z, -h, h);
+  for (const s of starPool) {
+    if (s.active) continue;
+    s.active = true;
+    s.phase = 'tele';
+    s.t = 0;
+    s.delay = delay || 0;
+    s.x = x;
+    s.z = z;
+    s.elems = level.stats.star.elems;   // 属性は着弾まで取得時点のものを持ち回る
+    const color = artColor(s.elems, CONFIG.arts.star.color);
+    s.ring.material.color.setHex(color);
+    s.ball.material.color.setHex(color);
+    return;
+  }
+}
+
+// トリガー各種から呼ぶ入口。双つ星なら少しずらした2発目を予約する
+function castStar(x, z) {
+  const S = CONFIG.arts.star;
+  spawnStar(x, z, 0);
+  if (level.stats.star.twin) {
+    spawnStar(
+      x + (Math.random() * 2 - 1) * S.twinOffset,
+      z + (Math.random() * 2 - 1) * S.twinOffset,
+      S.twinDelay
+    );
+  }
+}
+
+function castStarAtRandomEnemy() {
+  if (enemies.length === 0) return;
+  const e = enemies[(Math.random() * enemies.length) | 0];
+  castStar(e.mesh.position.x, e.mesh.position.z);
+}
+
+function updateStars(dt) {
+  const S = CONFIG.arts.star;
+  for (const s of starPool) {
+    if (!s.active) continue;
+    if (s.delay > 0) { s.delay -= dt; continue; }
+    s.t += dt;
+    if (s.phase === 'tele') {
+      const t = Math.min(s.t / S.telegraph, 1);
+      s.ring.visible = true;
+      s.ring.position.set(s.x, 0.05, s.z);
+      s.ring.scale.setScalar(0.3 + t * S.radius);
+      s.ring.material.opacity = 0.35 + 0.35 * Math.sin(state.time * 22);
+      if (t >= 1) {
+        s.phase = 'fall';
+        s.t = 0;
+        s.ball.visible = true;
+      }
+    } else {
+      const t = Math.min(s.t / S.fallTime, 1);
+      s.ball.position.set(s.x, S.fallHeight * (1 - t) + 0.4, s.z);
+      if (t >= 1) {
+        s.active = false;
+        s.ring.visible = s.ball.visible = false;
+        starImpact(s);
+      }
+    }
+  }
+}
+
+function starImpact(s) {
+  const S = CONFIG.arts.star;
+  spawnGrazeFx(s.x, s.z, 2.4, artColor(s.elems, S.color));   // 着弾の広がるリング
+  const dmg = S.damage * level.stats.summonMul;
+  // damageEnemy が splice するので後ろから回す
+  for (let i = enemies.length - 1; i >= 0; i--) {
+    const e = enemies[i];
+    const dx = e.mesh.position.x - s.x;
+    const dz = e.mesh.position.z - s.z;
+    const r = S.radius + e.def.radius;
+    if (dx * dx + dz * dz > r * r) continue;
+    // 属性を先に付与する(とどめの一撃でも雷の連鎖は起きる)
+    applyElems(e, dmg, s.elems);
+    if (e.hpBar) damageEnemy(e, dmg);   // 連鎖が先にこの敵を倒していたら hpBar が null
+  }
+}
+
+// --- 霊剣 ---
+// ランダムな敵の頭上に現れて突き落ちる剣。落下中は対象を追うので必中に近いが、
+// 落下し切る前に対象が倒れたら最後の位置に落ちて不発(演出だけ出す)
+const swordPool = (function () {
+  const W = CONFIG.arts.sword;
+  const items = [];
+  for (let i = 0; i < W.pool; i++) {
+    const mesh = new THREE.Mesh(
+      new THREE.ConeGeometry(0.16, 1.3, 6),
+      new THREE.MeshBasicMaterial({ color: W.color })
+    );
+    mesh.rotation.x = Math.PI;        // 切っ先を下に
+    mesh.visible = false;
+    scene.add(mesh);
+    items.push({ active: false, t: 0, target: null, x: 0, z: 0, elems: null, mesh });
+  }
+  return items;
+})();
+
+function castSwords(n) {
+  if (enemies.length === 0) return;
+  for (let i = 0; i < n; i++) {
+    const target = enemies[(Math.random() * enemies.length) | 0];
+    for (const w of swordPool) {
+      if (w.active) continue;
+      w.active = true;
+      w.t = 0;
+      w.target = target;
+      w.x = target.mesh.position.x;
+      w.z = target.mesh.position.z;
+      w.elems = level.stats.sword.elems;
+      w.mesh.material.color.setHex(artColor(w.elems, CONFIG.arts.sword.color));
+      w.mesh.visible = true;
+      break;
+    }
+  }
+}
+
+function updateSwords(dt) {
+  const W = CONFIG.arts.sword;
+  for (const w of swordPool) {
+    if (!w.active) continue;
+    w.t += dt;
+    // removeEnemy 済みの敵は hpBar が null になるのでそれで生存を見る
+    if (w.target && w.target.hpBar) {
+      w.x = w.target.mesh.position.x;
+      w.z = w.target.mesh.position.z;
+    }
+    const t = Math.min(w.t / W.fallTime, 1);
+    w.mesh.position.set(w.x, W.fallHeight * (1 - t) + 0.8, w.z);
+    if (t >= 1) {
+      w.active = false;
+      w.mesh.visible = false;
+      spawnGrazeFx(w.x, w.z, 0.9, artColor(w.elems, W.color));
+      if (w.target && w.target.hpBar) {
+        const dmg = W.damage * level.stats.summonMul;
+        applyElems(w.target, dmg, w.elems);
+        if (w.target.hpBar) damageEnemy(w.target, dmg);
+      }
+      w.target = null;                // 敵オブジェクトを掴みっぱなしにしない
+    }
+  }
+}
+
+// --- 守護者 ---
+// スキルと属性の対応。syncGuardians() が taken からお供の並びを作り直す
+const GUARDIAN_SKILLS = { guard_fire: 'fire', guard_ice: 'ice', guard_thunder: 'thunder', guard_poison: 'poison' };
+const guardians = [];   // { elem, lv, group, timer, seed }
+
+// 守護者の弾(炎・氷・毒)。矢と同じ当たり判定ループ(updateProjectiles)で処理する
+const orbPool = makePool(CONFIG.arts.guardian.pool, () =>
+  new THREE.Mesh(
+    new THREE.SphereGeometry(0.18, 8, 6),
+    new THREE.MeshBasicMaterial({ color: 0xffffff })
+  )
+);
+// 自弾として扱うプールの一覧(updateProjectiles が回す。フレーム中に配列を作らない)
+const playerShotPools = [arrowPool, orbPool];
+
+function buildGuardianMesh(elem) {
+  const group = new THREE.Group();
+  const core = new THREE.Mesh(
+    new THREE.SphereGeometry(0.16, 12, 9),
+    new THREE.MeshBasicMaterial({ color: ELEM_COLORS[elem] })
+  );
+  const shell = new THREE.Mesh(
+    new THREE.SphereGeometry(0.27, 12, 9),
+    new THREE.MeshLambertMaterial({ color: 0xffffff, transparent: true, opacity: 0.35 })
+  );
+  group.add(core, shell);
+  scene.add(group);
+  return group;
+}
+
+function despawnGuardians() {
+  for (const g of guardians) scene.remove(g.group);
+  guardians.length = 0;
+}
+
+// 取得済みの守護者スキルと場のお供を同期する(取得時・リセット時だけ呼ぶ)
+function syncGuardians() {
+  despawnGuardians();
+  for (const id in GUARDIAN_SKILLS) {
+    const lv = level.taken[id] || 0;
+    if (lv <= 0) continue;
+    const elem = GUARDIAN_SKILLS[id];
+    guardians.push({
+      elem, lv,
+      group: buildGuardianMesh(elem),
+      timer: Math.random(),           // 召喚直後に全員一斉に撃たないようずらす
+      seed: Math.random() * Math.PI * 2,
+    });
+  }
+}
+
+const _guardDir = new THREE.Vector3();
+const _guardOrigin = new THREE.Vector3();
+
+function updateGuardians(dt) {
+  const G = CONFIG.arts.guardian;
+  const pp = player.mesh.position;
+  for (let i = 0; i < guardians.length; i++) {
+    const g = guardians[i];
+    // プレイヤーの周りをゆっくり回りながら上下に浮遊する
+    const a = state.time * G.orbitSpeed + (i / guardians.length) * Math.PI * 2;
+    g.group.position.set(
+      pp.x + Math.cos(a) * G.orbitRadius,
+      G.height + Math.sin(state.time * 3 + g.seed) * 0.15,
+      pp.z + Math.sin(a) * G.orbitRadius
+    );
+    if (enemies.length === 0) continue;
+    g.timer -= dt;
+    if (g.timer > 0) continue;
+    const lv2 = g.lv >= 2;
+    const rate = level.stats.guardianRate / (lv2 ? G.lv2IntervalMul : 1);
+    const dmgMul = level.stats.summonMul * (lv2 ? G.lv2DamageMul : 1);
+    if (g.elem === 'thunder') {
+      // 雷の守護者だけ即着弾の落雷(属性の連鎖もここから起きる)
+      g.timer = G.boltInterval / rate;
+      const e = enemies[(Math.random() * enemies.length) | 0];
+      spawnBolt(e.mesh.position.x, e.mesh.position.z, ELEM_COLORS.thunder, 1);
+      const dmg = G.boltDamage * dmgMul;
+      applyElems(e, dmg, ['thunder']);
+      if (e.hpBar) damageEnemy(e, dmg);
+    } else {
+      g.timer = G.orbInterval / rate;
+      const e = nearestEnemy();
+      _guardDir.subVectors(e.mesh.position, g.group.position);
+      _guardDir.y = 0;
+      if (_guardDir.lengthSq() < 1e-6) continue;
+      _guardDir.normalize();
+      _guardOrigin.set(g.group.position.x, 0.9, g.group.position.z);
+      const b = spawnFromPool(orbPool, _guardOrigin, _guardDir, G.orbSpeed, G.orbDamage * dmgMul);
+      if (b) {
+        b.elems = GUARDIAN_ELEMS[g.elem];
+        b.mesh.material.color.setHex(ELEM_COLORS[g.elem]);
+      }
+    }
+  }
+}
+
+// 守護者の弾に持たせる属性配列(発射のたびに new しないため属性ごとに1つ持つ)
+const GUARDIAN_ELEMS = { fire: ['fire'], ice: ['ice'], thunder: ['thunder'], poison: ['poison'] };
+
+// --- トリガーと毎フレーム更新 ---
+const arts = { swordTimer: 0 };
+
+// 攻撃1回(斉射)ごと: 追撃の星・追影の剣
+function onPlayerAttackArts() {
+  const st = level.stats;
+  if (st.star.onAttack > 0 && Math.random() < st.star.onAttack) castStarAtRandomEnemy();
+  if (st.sword.onAttack > 0 && Math.random() < st.sword.onAttack) castSwords(st.sword.count);
+}
+
+// 被弾が実際に通ったとき: 報復の剣
+function onPlayerHitArts() {
+  if (level.stats.sword.revenge) castSwords(3);
+}
+
+// グレイズ成立: 見切りの星
+function onGrazeArts() {
+  if (level.stats.star.onGraze) castStarAtRandomEnemy();
+}
+
+// 敵を倒したとき(倒した位置に落とすので座標だけ受け取る): 弔いの星
+function onKillArts(x, z) {
+  if (level.stats.star.onKill > 0 && Math.random() < level.stats.star.onKill) castStar(x, z);
+}
+
+function updateArts(dt) {
+  // 剣の雨(周期トリガー)。敵がいないときはタイマーを止めて無駄撃ちしない
+  const sw = level.stats.sword;
+  if (sw.interval > 0 && enemies.length > 0) {
+    arts.swordTimer -= dt;
+    if (arts.swordTimer <= 0) {
+      arts.swordTimer = sw.interval;
+      castSwords(sw.count);
+    }
+  }
+  updateStars(dt);
+  updateSwords(dt);
+  updateGuardians(dt);
+  updateBolts(dt);
+}
+
+// 場に出ている星・霊剣・弾・光柱を消す(チャプタークリアやタイトルへの遷移時。守護者は残す)
+function clearArtsFx() {
+  for (const s of starPool) { s.active = false; s.ring.visible = s.ball.visible = false; }
+  for (const w of swordPool) { w.active = false; w.mesh.visible = false; w.target = null; }
+  for (const b of boltPool) { b.life = 0; b.mesh.visible = false; }
+  clearPool(orbPool);
+}
+
+// ラン開始時の全リセット。resetLevel() の後に呼ぶ(taken が空なら守護者も全員退場)
+function resetArts() {
+  clearArtsFx();
+  arts.swordTimer = 0;
+  syncGuardians();
 }
 
 // =====================================================================
@@ -1669,6 +2187,11 @@ function spawnEnemy(typeName, waveNum) {
     laserOrigin: new THREE.Vector3(),
     laserDir: new THREE.Vector3(0, 0, 1),
     laserGrazed: false,
+    // エレメントの状態異常(applyElems が書き、updateEnemy が進める)
+    burnT: 0, burnTick: 0, burnDmg: 0,    // 燃焼: 残り時間 / 次のダメージまで / 1回分のダメージ
+    freezeT: 0, freezeCd: 0,              // 凍結: 残り時間 / 再凍結までのクールダウン
+    poisonTick: 0, poisonDmg: 0,          // 毒: 次のダメージまで / 毎秒のダメージ(0 なら未感染)
+    frozenTint: false,                    // 凍結の色を付けたか(解除時に戻すための印)
   };
   enemies.push(enemy);
   return enemy;
@@ -1709,7 +2232,9 @@ function damageEnemy(enemy, amount) {
   if (enemy.hp <= 0) {
     state.score += enemy.def.score;
     gainExp(enemy.def.exp || 0);    // レベルアップはキューに積むだけ(3択は animate が開く)
+    const ex = enemy.mesh.position.x, ez = enemy.mesh.position.z;
     removeEnemy(enemy);
+    onKillArts(ex, ez);             // 弔いの星(倒した位置に落とす)
     updateHud();
     if (enemies.length === 0 && state.phase === 'playing') onWaveClear();
   }
@@ -1726,6 +2251,41 @@ function fireEnemyAttack(enemy) {
 function updateEnemy(enemy, dt) {
   const def = enemy.def;
   const pos = enemy.mesh.position;
+
+  // --- エレメントの状態異常 ---
+  // 継続ダメージも damageEnemy() を通す(数値表示・撃破処理を経由させる)。
+  // 倒れたら removeEnemy 済み(hpBar が null)なので、以降の処理には入らない
+  const E = CONFIG.arts.elements;
+  if (enemy.freezeCd > 0) enemy.freezeCd -= dt;
+  if (enemy.burnT > 0) {
+    enemy.burnT -= dt;
+    enemy.burnTick += dt;
+    if (enemy.burnTick >= E.fire.tickEvery) {
+      enemy.burnTick = 0;
+      damageEnemy(enemy, enemy.burnDmg);
+      if (!enemy.hpBar) return;           // 燃え尽きた
+    }
+  }
+  if (enemy.poisonDmg > 0) {
+    enemy.poisonTick += dt;
+    if (enemy.poisonTick >= E.poison.tickEvery) {
+      enemy.poisonTick = 0;
+      damageEnemy(enemy, enemy.poisonDmg);
+      if (!enemy.hpBar) return;           // 毒で倒れた
+    }
+  }
+  const frozen = enemy.freezeT > 0;
+  if (frozen) enemy.freezeT -= dt;
+  // 凍結中は青く染める。ダメージの赤発光(setTimeout)と競合しても毎フレーム上書きされる
+  const bodyMat = enemy.mesh.userData.body.material;
+  if (frozen) {
+    bodyMat.emissive.setHex(0x2255aa);
+    enemy.frozenTint = true;
+  } else if (enemy.frozenTint) {
+    enemy.frozenTint = false;
+    bodyMat.emissive.setHex(0x000000);
+  }
+
   const toPlayer = new THREE.Vector3().subVectors(player.mesh.position, pos);
   toPlayer.y = 0;
   const dist = toPlayer.length();
@@ -1745,7 +2305,7 @@ function updateEnemy(enemy, dt) {
   }
   // レーザー中は足を止める(発射点も角度も固定なので、動くと線と実際のビームがずれる)
   if (enemy.laserPhase) moveVec = null;
-  if (moveVec) {
+  if (moveVec && !frozen) {
     pos.addScaledVector(moveVec, def.speed * enemy.speedMul * dt);
     const h = CONFIG.arena.half - def.radius;
     pos.x = Math.max(-h, Math.min(h, pos.x));
@@ -1754,9 +2314,9 @@ function updateEnemy(enemy, dt) {
   enemy.mesh.lookAt(player.mesh.position.x, pos.y, player.mesh.position.z);
   if (def.behavior === 'boss') enemy.mesh.userData.body.rotation.y += dt * 1.5;
 
-  // --- 攻撃 ---
+  // --- 攻撃 ---(凍結中は予兆もタイマーも止まる)
   const atk = def.attack;
-  if (atk) {
+  if (atk && !frozen) {
     if (enemy.telegraphTimer >= 0) {
       // 予兆中: 赤リングを拡大
       enemy.telegraphTimer += dt;
@@ -1780,7 +2340,8 @@ function updateEnemy(enemy, dt) {
       }
     }
   }
-  if (enemy.laserFx) updateLaser(enemy, dt);
+  // 凍結中は新しいレーザーを始めない(予兆・発射が既に動いているものは最後まで通す)
+  if (enemy.laserFx && (enemy.laserPhase || !frozen)) updateLaser(enemy, dt);
   updateHpBar(enemy, dt);
 
   // --- 接触ダメージ ---
@@ -2005,26 +2566,32 @@ function updatePlayer(dt) {
 
 function updateProjectiles(dt) {
   const h = CONFIG.arena.half + 3;
-  // プレイヤーの矢 → 敵
-  for (const b of arrowPool) {
-    if (!b.active) continue;
-    b.mesh.position.addScaledVector(b.vel, dt);
-    b.life -= dt;
-    const p = b.mesh.position;
-    if (b.life <= 0 || Math.abs(p.x) > h || Math.abs(p.z) > h) { deactivate(b); continue; }
-    // damageEnemy が removeEnemy(splice)を呼ぶので、敵は後ろから回す
-    for (let ei = enemies.length - 1; ei >= 0; ei--) {
-      const e = enemies[ei];
-      const r = e.def.radius + 0.25;
-      if (p.distanceToSquared(e.mesh.position.clone().setY(p.y)) >= r * r) continue;
-      if (b.hits && b.hits.has(e)) continue;   // 貫通した敵に次のフレームで多重ヒットしない
-      damageEnemy(e, b.damage);
-      if (b.pierce > 0) {                      // 貫通スキル: 消えずに突き抜ける
-        b.pierce--;
-        (b.hits || (b.hits = new Set())).add(e);
-      } else {
-        deactivate(b);
-        break;
+  // プレイヤーの矢・守護者の弾 → 敵
+  for (const pool of playerShotPools) {
+    for (const b of pool) {
+      if (!b.active) continue;
+      b.mesh.position.addScaledVector(b.vel, dt);
+      b.life -= dt;
+      const p = b.mesh.position;
+      if (b.life <= 0 || Math.abs(p.x) > h || Math.abs(p.z) > h) { deactivate(b); continue; }
+      // damageEnemy が removeEnemy(splice)を呼ぶので、敵は後ろから回す
+      for (let ei = enemies.length - 1; ei >= 0; ei--) {
+        const e = enemies[ei];
+        const r = e.def.radius + 0.25;
+        if (p.distanceToSquared(e.mesh.position.clone().setY(p.y)) >= r * r) continue;
+        if (b.hits && b.hits.has(e)) continue;   // 貫通した敵に次のフレームで多重ヒットしない
+        // 属性を先に付与する(とどめの一撃でも雷の連鎖は起きる)。
+        // 連鎖がこの敵自身を倒すことはない(chainLightning は当てた敵を除く)が、
+        // 巻き添えで敵配列が縮むことはあるので damageEnemy 側の生存確認に hpBar を使う
+        applyElems(e, b.damage, b.elems);
+        if (e.hpBar) damageEnemy(e, b.damage);
+        if (b.pierce > 0) {                      // 貫通スキル: 消えずに突き抜ける
+          b.pierce--;
+          (b.hits || (b.hits = new Set())).add(e);
+        } else {
+          deactivate(b);
+          break;
+        }
       }
     }
   }
@@ -2083,6 +2650,7 @@ function animate() {
     updatePlayer(dt);
     for (let i = enemies.length - 1; i >= 0; i--) updateEnemy(enemies[i], dt);
     updateProjectiles(dt);
+    updateArts(dt);
     updateGrazeFx(dt);
     updateDamageTexts(dt);
   }
@@ -2178,8 +2746,19 @@ function updateExpHud() {
 // pending が残っていれば選ぶたびに次の3択を出し直す。全部選び終わるまで 'levelup' のまま
 let levelupPicks = [];   // いま表示中のスキルid(キー 1/2/3 用)
 
+// requires ゲート: 属性・強化スキルは、そのファミリーの生成スキル(family フィールド持ち)を
+// 1つでも取っているときだけ抽選に並ぶ。'summon' はどれかのファミリーを持っていれば良い
+function familyOwned(fam) {
+  if (fam === 'summon') return familyOwned('star') || familyOwned('sword') || familyOwned('guardian');
+  return Object.keys(SKILLS).some((id) => SKILLS[id].family === fam && (level.taken[id] || 0) > 0);
+}
+
 const availableSkills = () =>
-  Object.keys(SKILLS).filter((id) => (level.taken[id] || 0) < SKILLS[id].max);
+  Object.keys(SKILLS).filter((id) => {
+    const s = SKILLS[id];
+    if ((level.taken[id] || 0) >= s.max) return false;
+    return !s.requires || familyOwned(s.requires);
+  });
 
 // レアリティの重み付き抽選: pool(未MAXスキルid)を段ごとに分け、候補が
 // 残っている段だけで重みを引き、**その段の候補一覧**を返す。3択はこの1段の
@@ -2296,6 +2875,7 @@ function startGame(chapterIndex) {
   state.endless = false;
   resetGraze();
   resetLevel();
+  resetArts();                       // resetLevel の後(taken が空なら守護者も退場)
   resetDamageTexts();
   titleScreen.style.display = 'none';
   gameoverScreen.style.display = 'none';
@@ -2327,6 +2907,7 @@ function chapterClear() {
   state.score += bonus;
   clearPool(arrowPool);
   clearPool(bulletPool);
+  clearArtsFx();                     // 落下中の星・霊剣も掃除(守護者は「このまま続ける」用に残す)
   resetDamageTexts();                // 'clear' 中は animate() が止まるので消し残りを掃除する
   ccSub.textContent = ch.name + '  ' + ch.subtitle;
   ccStats.innerHTML =
@@ -2355,6 +2936,8 @@ function goTitle() {
   while (enemies.length) removeEnemy(enemies[0]);
   clearPool(arrowPool);
   clearPool(bulletPool);
+  clearArtsFx();
+  despawnGuardians();                // タイトルにお供だけ浮いていないように
   state.phase = 'title';
   renderChapterSelect();             // 解放されたチャプターを反映
   clearScreen.style.display = 'none';
