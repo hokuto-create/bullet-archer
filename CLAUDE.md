@@ -121,12 +121,15 @@ GitHub Pages で公開する前提の、ビルド不要な単一 `index.html` �
     `playRarityTease()` がカード出現までの秒数を返し、`--in-delay` の起点になる。
     levelup ポーズ中なので setTimeout 駆動でよく、`closeLevelUp()` と再抽選時に
     `clearRarityTease()` でタイマーと光球を確実に消す。色は `CONFIG.level.rarity` を共用
-  - スキル一覧(id: 表示名): `multishot` 乱れ撃ち(扇状+1本)/ `power` 剛弓の一撃(+25%)/
-    `rapid` 疾風の指(攻撃速度+20%)/ `boots` 韋駄天の脚(移動+10%)/
+  - スキル一覧(id: 表示名): `multishot` 乱れ撃ち(扇状+1本)/ `power` 剛弓の一撃(+10%)/
+    `rapid` 疾風の指(攻撃速度+10%)/ `boots` 韋駄天の脚(移動+10%)/
     `vital` 勇者の血脈(最大HP+25。`player.maxHp` を増やす。`CONFIG.player.maxHp` は初期値)/
     `pierce` 射抜きの極意(`b.pierce` と `b.hits` の Set で多重ヒット防止)/
-    `back` 背中の目 / `side` 両翼の構え / `grazeup` 紙一重の妙 / `regen` 命の芽吹き。
-    ほかに召喚攻撃・エレメント系が26種(下の「召喚攻撃とエレメント」参照)
+    `back` 背中の目 / `side` 両翼の構え / `grazeup` 紙一重の妙 /
+    `regen` 命の芽吹き(ヒット時に確率でHP回復)。
+    **ステータス強化はコモン +10% とレア +20% の2段構成**(`mighty` 破軍の剛弓 / `flurry` 神速の指、
+    召喚側は `summon_mastery` 召喚の真髄 / `guard_oath` 守護者の誓い が各コモン版の上位)。
+    ほかに召喚攻撃・エレメント系が28種(下の「召喚攻撃とエレメント」参照)
   - **表示名は効果の直訳にしない**。何が起きるかは `desc` に全部書いてあるので、
     `name` は技名らしい呼び名にする(「貫通の矢」→「射抜きの極意」)
   - 3択のカードは**必ず横一列**。`#skill-cards` は `grid-template-columns: repeat(3, 1fr)` で、

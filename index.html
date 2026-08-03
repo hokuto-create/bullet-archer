@@ -1440,10 +1440,12 @@ const SKILLS = {
   guard_ice:     { icon: '❄️', name: '氷の守護者', desc: '敵を凍らせる氷弾を放つお供を召喚(重ねて強化)', max: 2, family: 'guardian', rarity: 'epic' },
   guard_thunder: { icon: '⚡', name: '雷の守護者', desc: 'ランダムな敵へ連鎖する落雷を放つお供を召喚(重ねて強化)', max: 2, family: 'guardian', rarity: 'epic' },
   guard_poison:  { icon: '🧪', name: '毒の守護者', desc: '毒弾を放つお供を召喚。毒は倒れるまで毎秒削る(重ねて強化)', max: 2, family: 'guardian', rarity: 'epic' },
-  guard_bond:    { icon: '🤝', name: '守護者の絆', desc: '守護者の攻撃速度 +25%', max: 3, value: 0.25, requires: 'guardian', rarity: 'rare' },
+  guard_bond:    { icon: '🤝', name: '守護者の絆', desc: '守護者の攻撃速度 +10%', max: 3, value: 0.1, requires: 'guardian', rarity: 'common' },
+  guard_oath:    { icon: '✊', name: '守護者の誓い', desc: '守護者の攻撃速度 +20%', max: 2, value: 0.2, requires: 'guardian', rarity: 'rare' },
 
   // --- 召喚攻撃の共通強化 ---
-  summon_power:  { icon: '📖', name: '召喚の心得', desc: '星・霊剣・守護者のダメージ +30%', max: 3, value: 0.3, requires: 'summon', rarity: 'rare' },
+  summon_power:  { icon: '📖', name: '召喚の心得', desc: '星・霊剣・守護者のダメージ +10%', max: 3, value: 0.1, requires: 'summon', rarity: 'common' },
+  summon_mastery:{ icon: '📕', name: '召喚の真髄', desc: '星・霊剣・守護者のダメージ +20%', max: 2, value: 0.2, requires: 'summon', rarity: 'rare' },
 };
 
 const level = {
@@ -1472,7 +1474,7 @@ function recomputeSkillStats() {
     regenChance: n('regen') > 0 ? SKILLS.regen.chance : 0,   // ヒット時にHP回復する確率
     // --- 召喚攻撃・エレメント ---
     arrowElems: elems('arrow'),               // 矢に乗る属性
-    summonMul: 1 + SKILLS.summon_power.value * n('summon_power'),
+    summonMul: 1 + SKILLS.summon_power.value * n('summon_power') + SKILLS.summon_mastery.value * n('summon_mastery'),
     star: {
       onAttack: chance('star_attack'),        // 攻撃時に星が落ちる確率
       onKill: chance('star_kill'),            // 撃破時に星が落ちる確率
@@ -1487,7 +1489,7 @@ function recomputeSkillStats() {
       count: 1 + n('sword_double'),           // 一度に降る本数
       elems: elems('sword'),
     },
-    guardianRate: 1 + SKILLS.guard_bond.value * n('guard_bond'),
+    guardianRate: 1 + SKILLS.guard_bond.value * n('guard_bond') + SKILLS.guard_oath.value * n('guard_oath'),
   };
 }
 recomputeSkillStats();
