@@ -1447,6 +1447,7 @@ const SKILLS = {
   // --- 召喚攻撃の共通強化 ---
   summon_power:  { icon: '📖', name: '召喚の心得', desc: '星・霊剣・守護者のダメージ +10%', max: 3, value: 0.1, requires: 'summon', rarity: 'common' },
   summon_mastery:{ icon: '📕', name: '召喚の真髄', desc: '星・霊剣・守護者のダメージ +20%', max: 2, value: 0.2, requires: 'summon', rarity: 'rare' },
+  summon_king:   { icon: '👑', name: '召喚王の威光', desc: '星・霊剣・守護者のダメージ +20%、さらに発動率・発動間隔・攻撃速度も 20% 向上', max: 2, value: 0.2, requires: 'summon', rarity: 'epic' },
 };
 
 const level = {
@@ -1465,6 +1466,9 @@ function recomputeSkillStats() {
   const chance = (id) => (n(id) > 0 ? SKILLS[id].chances[n(id) - 1] : 0);
   // 軍神の加護は全攻撃強化: 矢(damageMul)と召喚(summonMul)の両方に乗算で掛ける
   const allMul = 1 + SKILLS.warlord.value * n('warlord');
+  // 召喚王の威光: 召喚のダメージに乗算 + 「速さ」にも一括で効く
+  // (星=発動率、霊剣=周期短縮、守護者=攻撃間隔短縮。消費側は毎回 stats を読むのでここで焼き込む)
+  const summonRate = 1 + SKILLS.summon_king.value * n('summon_king');
   level.stats = {
     damageMul: (1 + SKILLS.power.value * n('power') + SKILLS.mighty.value * n('mighty')) * allMul,
     fireMul: 1 + SKILLS.rapid.value * n('rapid') + SKILLS.flurry.value * n('flurry'),
@@ -1477,22 +1481,22 @@ function recomputeSkillStats() {
     regenChance: n('regen') > 0 ? SKILLS.regen.chance : 0,   // ヒット時にHP回復する確率
     // --- 召喚攻撃・エレメント ---
     arrowElems: elems('arrow'),               // 矢に乗る属性
-    summonMul: (1 + SKILLS.summon_power.value * n('summon_power') + SKILLS.summon_mastery.value * n('summon_mastery')) * allMul,
+    summonMul: (1 + SKILLS.summon_power.value * n('summon_power') + SKILLS.summon_mastery.value * n('summon_mastery')) * allMul * summonRate,
     star: {
-      onAttack: chance('star_attack'),        // 攻撃時に星が落ちる確率
-      onKill: chance('star_kill'),            // 撃破時に星が落ちる確率
+      onAttack: Math.min(1, chance('star_attack') * summonRate),   // 攻撃時に星が落ちる確率
+      onKill: Math.min(1, chance('star_kill') * summonRate),       // 撃破時に星が落ちる確率
       onGraze: n('star_graze') > 0,
       twin: n('star_twin') > 0,
       elems: elems('star'),
     },
     sword: {
-      interval: n('sword_rain') > 0 ? SKILLS.sword_rain.intervals[n('sword_rain') - 1] : 0,
-      onAttack: chance('sword_attack'),
+      interval: n('sword_rain') > 0 ? SKILLS.sword_rain.intervals[n('sword_rain') - 1] / summonRate : 0,
+      onAttack: Math.min(1, chance('sword_attack') * summonRate),
       revenge: n('sword_revenge') > 0,
       count: 1 + n('sword_double'),           // 一度に降る本数
       elems: elems('sword'),
     },
-    guardianRate: 1 + SKILLS.guard_bond.value * n('guard_bond') + SKILLS.guard_oath.value * n('guard_oath'),
+    guardianRate: (1 + SKILLS.guard_bond.value * n('guard_bond') + SKILLS.guard_oath.value * n('guard_oath')) * summonRate,
   };
 }
 recomputeSkillStats();
