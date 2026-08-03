@@ -1405,6 +1405,8 @@ const SKILLS = {
   back:      { icon: '🔄', name: '背中の目',     desc: '後方にも矢を放つ', max: 1, rarity: 'rare' },
   side:      { icon: '↔️', name: '両翼の構え',   desc: '左右にも矢を放つ', max: 1, rarity: 'rare' },
   grazeup:   { icon: '✨', name: '紙一重の妙',   desc: 'グレイズ強化ショットの倍率アップ(2倍→2.5倍→3倍)', max: 2, value: 0.5, rarity: 'rare' },
+  mighty:    { icon: '💪', name: '破軍の剛弓',   desc: '矢の攻撃力 +20%', max: 2, value: 0.2, rarity: 'rare' },
+  flurry:    { icon: '🌀', name: '神速の指',     desc: '攻撃速度 +20%', max: 2, value: 0.2, rarity: 'rare' },
   regen:     { icon: '🌿', name: '命の芽吹き',   desc: '攻撃がヒットすると20%の確率でHPが1回復', max: 1, value: 1, chance: 0.2, rarity: 'common' },
 
   // --- 矢のエレメント(通常攻撃に属性を乗せる。全部同時に持てる) ---
@@ -1459,8 +1461,8 @@ function recomputeSkillStats() {
   const elems = (prefix) => ['fire', 'ice', 'thunder', 'poison'].filter((el) => n(prefix + '_' + el) > 0);
   const chance = (id) => (n(id) > 0 ? SKILLS[id].chances[n(id) - 1] : 0);
   level.stats = {
-    damageMul: 1 + SKILLS.power.value * n('power'),
-    fireMul: 1 + SKILLS.rapid.value * n('rapid'),
+    damageMul: 1 + SKILLS.power.value * n('power') + SKILLS.mighty.value * n('mighty'),
+    fireMul: 1 + SKILLS.rapid.value * n('rapid') + SKILLS.flurry.value * n('flurry'),
     speedMul: 1 + SKILLS.boots.value * n('boots'),
     multishot: n('multishot'),      // 正面の追加本数
     pierce: n('pierce'),            // 貫通できる敵の数
