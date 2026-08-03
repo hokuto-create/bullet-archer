@@ -115,6 +115,12 @@ GitHub Pages で公開する前提の、ビルド不要な単一 `index.html` �
     (CSS の `card-in`、遅延は `--in-delay`)。引いた段のレア度が高いほど1枚ごとの
     溜めが長く、期待感を作る。連続レベルアップ中は画面が出っぱなしなので
     タイトルの演出は再生されず、カードだけが跳ね直す
+  - **昇格演出**(レア以上を引いた回のみ): カードが出る前に画面中央の光球
+    (`#rarity-tease`)が common から引いた段まで**色を1段ずつ纏って弾み**、
+    最後は段の色でバーストして消える(「青で終わりかと思ったら紫に上がった」を作る)。
+    `playRarityTease()` がカード出現までの秒数を返し、`--in-delay` の起点になる。
+    levelup ポーズ中なので setTimeout 駆動でよく、`closeLevelUp()` と再抽選時に
+    `clearRarityTease()` でタイマーと光球を確実に消す。色は `CONFIG.level.rarity` を共用
   - スキル一覧(id: 表示名): `multishot` 乱れ撃ち(扇状+1本)/ `power` 剛弓の一撃(+25%)/
     `rapid` 疾風の指(攻撃速度+20%)/ `boots` 韋駄天の脚(移動+10%)/
     `vital` 勇者の血脈(最大HP+25。`player.maxHp` を増やす。`CONFIG.player.maxHp` は初期値)/
