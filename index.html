@@ -138,6 +138,27 @@
     color: var(--rc, #b8c4d0); letter-spacing: 0.12em;
     margin-bottom: 4px;
   }
+  /* レア以上を引いた回の昇格演出: カードが出る前に光球が段の色を
+     低い方から順に纏って弾み(--tc は JS が段の色を流し込む)、
+     引いた段の色で大きくバーストする。段が高いほど昇格回数が増えて溜めになる */
+  #rarity-tease {
+    position: absolute; left: 50%; top: 50%;
+    width: 120px; height: 120px; margin: -60px 0 0 -60px;
+    border-radius: 50%; pointer-events: none; display: none;
+    background: radial-gradient(circle, rgba(255,255,255,0.95) 0%, var(--tc, #fff) 40%, transparent 70%);
+  }
+  #rarity-tease.step { animation: tease-pop 0.5s ease; }
+  @keyframes tease-pop {
+    from { transform: scale(0.4); opacity: 0.55; }
+    60% { transform: scale(1.2); opacity: 1; }
+    to { transform: scale(1); opacity: 0.95; }
+  }
+  #rarity-tease.final { animation: tease-burst 0.55s ease-out forwards; }
+  @keyframes tease-burst {
+    from { transform: scale(1); opacity: 1; }
+    to { transform: scale(3.4); opacity: 0; }
+  }
+
   /* エピック以上は枠を淡く明滅させて「引き」の強さを見せる。
      animation はショートハンドで card-in を上書きしてしまうため、
      出現アニメもここに並記する(delay も2本ぶん指定) */
@@ -291,6 +312,7 @@
 <div id="levelup-screen">
   <div id="levelup-title">LEVEL UP!</div>
   <div id="levelup-sub">スキルを1つ選ぼう(キー: 1 / 2 / 3)</div>
+  <div id="rarity-tease"></div>
   <div id="skill-cards"></div>
 </div>
 
@@ -2779,6 +2801,36 @@ function rollRarityTier(pool) {
   return tiers[Object.keys(tiers)[0]];   // 浮動小数の端数の保険
 }
 
+// レア以上を引いた回の昇格演出: 光球が common から引いた段まで色を1段ずつ
+// 纏って弾み、最後は段の色でバーストして消える。カードが出始めるまでの秒数を
+// 返す(コモンは演出なしで 0)。ゲームは levelup ポーズ中なので setTimeout でよい
+const rarityTeaseEl = document.getElementById('rarity-tease');
+const teaseTimers = [];
+function clearRarityTease() {
+  teaseTimers.forEach(clearTimeout);
+  teaseTimers.length = 0;
+  rarityTeaseEl.style.display = 'none';
+  rarityTeaseEl.classList.remove('step', 'final');
+}
+function playRarityTease(tierRank) {
+  clearRarityTease();
+  if (tierRank <= 0) return 0;
+  const keys = Object.keys(CONFIG.level.rarity).slice(0, tierRank + 1);
+  const step = 0.55;                 // 1段ごとの間隔(秒)
+  rarityTeaseEl.style.display = 'block';
+  keys.forEach((k, i) => {
+    teaseTimers.push(setTimeout(() => {
+      rarityTeaseEl.style.setProperty('--tc', CONFIG.level.rarity[k].color);
+      rarityTeaseEl.classList.remove('step', 'final');
+      void rarityTeaseEl.offsetWidth;          // アニメーションを再生し直す
+      rarityTeaseEl.classList.add(i === keys.length - 1 ? 'final' : 'step');
+    }, i * step * 1000));
+  });
+  const total = (keys.length - 1) * step + 0.55;   // 最後のバーストが終わるまで
+  teaseTimers.push(setTimeout(clearRarityTease, total * 1000));
+  return (keys.length - 1) * step + 0.25;   // バーストの途中からカードを出し始める
+}
+
 function openLevelUp() {
   const pool = availableSkills();
   if (pool.length === 0) { level.pending = 0; return; }   // 全スキル取り切り
@@ -2798,11 +2850,12 @@ function openLevelUp() {
   skillCardsEl.style.gridTemplateColumns = 'repeat(' + levelupPicks.length + ', 1fr)';
   skillCardsEl.style.maxWidth = (240 * levelupPicks.length) + 'px';
 
-  // 出現演出の溜め: レア度が高い段ほど1枚ごとの間隔を長くして期待感を作る
+  // 出現演出の溜め: レア度が高い段ほど1枚ごとの間隔を長くして期待感を作る。
+  // レア以上は先に昇格演出(色が段々上がる光球)を流し、カードはその後から出す
   const rarityRank = (id) => Object.keys(CONFIG.level.rarity).indexOf(SKILLS[id].rarity);
 
   skillCardsEl.innerHTML = '';
-  let inDelay = 0;
+  let inDelay = playRarityTease(rarityRank(levelupPicks[0]));
   levelupPicks.forEach((id, i) => {
     const s = SKILLS[id];
     const r = CONFIG.level.rarity[s.rarity];
@@ -2837,6 +2890,7 @@ function chooseSkill(id) {
 }
 
 function closeLevelUp() {
+  clearRarityTease();                // 演出の途中で選んでも光球を残さない
   levelupScreen.style.display = 'none';
   state.phase = 'playing';
   updateHud();
