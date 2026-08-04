@@ -1175,7 +1175,7 @@ function updatePlayerAnimation(dt) {
 
 function resetPlayer() {
   player.mesh.position.set(0, 0, 0);
-  player.mesh.rotation.y = 0;
+  player.mesh.rotation.set(0, 0, 0);   // lookAt が残した x/z 成分ごと消す
   player.maxHp = CONFIG.player.maxHp;
   player.hp = player.maxHp;
   player.fireTimer = 0;
@@ -2663,7 +2663,10 @@ function updatePlayer(dt) {
     const h = CONFIG.arena.half - CONFIG.player.radius;
     pos.x = Math.max(-h, Math.min(h, pos.x));
     pos.z = Math.max(-h, Math.min(h, pos.z));
-    player.mesh.rotation.y = Math.atan2(input.x, input.z);
+    // rotation.y だけの上書きにしない: 停止中の lookAt(オート照準)は向きによって
+    // オイラー角を (x=π, y', z=π) の表現で残すことがあり、y だけ書き換えると
+    // x/z の π が残ってキャラが鏡写しの向きで走ってしまう
+    player.mesh.rotation.set(0, Math.atan2(input.x, input.z), 0);
     player.fireTimer = Math.min(player.fireTimer, 0.15); // 停止直後すぐ撃てるように
   } else {
     // 停止中: 最寄りの敵へオート攻撃
