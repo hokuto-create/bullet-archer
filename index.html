@@ -363,6 +363,18 @@ const CONFIG = {
     arrowSpeed: 26,
     arrowDamage: 12,
     hitInvincible: 0.5,             // 被弾後の無敵時間(秒)
+    // 弓のモーション: 発射間隔(攻撃速度スキル込み)に同期して
+    // 「弦を引く → 引き絞って狙いを溜める → 放つ → フォロースルー」を繰り返す
+    bow: {
+      drawPortion: 0.6,             // 発射間隔のうち弦を引くのに使う割合(残りは引き絞ったまま狙いを溜める)
+      drawSmoothing: 16,            // 引きの追従の速さ(指数減衰の係数。大きいほどキビキビ)
+      holdTremor: 0.02,             // 引き絞り中のわずかな震え(弦の張りつめを見せる。ラジアン)
+      releaseTime: 0.15,            // 放った後のフォロースルー時間(秒)
+      releaseSnap: 40,              // リリース時に弦(=引き手)が戻る速さ(指数減衰の係数)
+      drawDepth: 0.35,              // 引き切りで弦を後ろへ引く距離(弓ローカル)。腕の実座標だと
+                                    // デフォルメの短い腕でほぼ折れないので、引き量から直接決める
+      recoil: 0.22,                 // 放った瞬間の弓手の跳ね上がり・体の反動の強さ(ラジアン)
+    },
     // 走りの土煙(足が地面を蹴るたびに出す。俯瞰では脚がほぼ見えないので、走っている感はこれで出す)
     dust: { count: 10, duration: 0.45, size: 0.28, opacity: 0.6, grow: 2.2, back: 0.45 },
   },
@@ -667,8 +679,10 @@ const player = {
   moving: false,
   aiming: false,                    // 停止中に敵へ狙いを付けている
   parts: null,                      // 人型モデルの可動パーツ(アニメーション用)
-  // run: 走り位相 / runW: 走りポーズの重み / aim: 構えポーズの重み / draw: 弓を引いた量
-  anim: { run: 0, runW: 0, aim: 0, draw: 0, idle: 0 },
+  // run: 走り位相 / runW: 走りポーズの重み / aim: 構えポーズの重み
+  // draw: 弓を引いた量(0=戻り 1=引き切り) / drawGoal: 発射サイクルから決まる引きの目標値
+  // release: 放った直後のフォロースルー残量(1→0。firePlayerShot 直後に 1 になる)
+  anim: { run: 0, runW: 0, aim: 0, draw: 0, drawGoal: 0, release: 0, idle: 0 },
 };
 
 // キャラクターの配色(見た目を変えるときはここだけ触る)
@@ -897,10 +911,11 @@ const HERO = {
     const dn = new THREE.Mesh(segGeo, strMat);
     bow.add(up, dn);
 
-    // 番えた矢(引いている間だけ表示)
+    // 番えた矢(引いている間だけ表示)。引き切りでも矢先が弓の前へ残る長さにする
+    // (短いと引いたぶんだけ全体が後退し、俯瞰では大きな頭に隠れて見えなくなる)
     const nock = new THREE.Group();
-    nock.add(put(new THREE.CylinderGeometry(0.014, 0.014, 0.5, 6), matBow, 0, 0, 0));
-    nock.add(put(new THREE.ConeGeometry(0.03, 0.09, 6), matArmor, 0, 0.28, 0));
+    nock.add(put(new THREE.CylinderGeometry(0.014, 0.014, 0.95, 6), matBow, 0, 0, 0));
+    nock.add(put(new THREE.ConeGeometry(0.03, 0.09, 6), matArmor, 0, 0.515, 0));
     nock.rotation.x = Math.PI / 2;
     nock.visible = false;
     bow.add(nock);
@@ -1028,7 +1043,9 @@ function updateBowPose() {
   pivot.quaternion.copy(_qHand).invert().multiply(_qBody).multiply(_qTilt);
 }
 
-// 弦と番え矢: 引き手(右手)の実座標に合わせて張るので、腕のポーズと必ず繋がる
+// 弦と番え矢: 横ずれ(x/y)は引き手(右手)の実座標に寄せて腕と繋がって見せる。
+// 引きの深さ(z)だけは引き量 A.draw から直接決める — デフォルメの短い腕では
+// 手の実座標の後退が 0.01 ユニット程度しかなく、弦がほぼ張ったままに見えるため
 const _nock = new THREE.Vector3();
 const _seg = new THREE.Vector3();
 const _axisY = new THREE.Vector3(0, 1, 0);
@@ -1040,7 +1057,7 @@ function updateBowString() {
   bow.worldToLocal(_nock);
   _nock.x = clamp(_nock.x, -0.08, 0.08);
   _nock.y = clamp(_nock.y, -0.16, 0.16);
-  _nock.z = Math.min(_nock.z, s.tipZ);
+  _nock.z = s.tipZ - CONFIG.player.bow.drawDepth * player.anim.draw;
   for (const [m, ty] of [[s.up, s.tipY], [s.dn, -s.tipY]]) {
     _seg.set(_nock.x, _nock.y - ty, _nock.z - s.tipZ);
     const len = _seg.length() || 0.001;
@@ -1048,8 +1065,10 @@ function updateBowString() {
     m.quaternion.setFromUnitVectors(_axisY, _seg.divideScalar(len));
     m.scale.y = len;
   }
-  s.nock.visible = s.tipZ - _nock.z > 0.06;
-  s.nock.position.set(_nock.x * 0.6, _nock.y * 0.6, _nock.z + 0.28);
+  // 番え矢は弦を引き始めたら見せる(リリースで draw が即 0 に落ちるので、
+  // 放った瞬間に矢が消えて発射された矢と繋がる)。矢筈は弦の折れ目に置く
+  s.nock.visible = player.aiming && player.anim.draw > 0.12;
+  s.nock.position.set(_nock.x * 0.6, _nock.y * 0.6, _nock.z + 0.475);
 }
 
 // 走りの土煙: 足が地面を蹴る位相に合わせて足元へ小さな煙を出す。
@@ -1105,7 +1124,13 @@ function updatePlayerAnimation(dt) {
   A.idle += dt;
   A.runW += ((player.moving ? 1 : 0) - A.runW) * Math.min(1, dt * 12);
   A.aim += ((player.aiming ? 1 : 0) - A.aim) * Math.min(1, dt * 12);
-  A.draw += ((player.aiming ? 1 : 0) - A.draw) * Math.min(1, dt * 9);
+  // 弓の引き: 目標値(drawGoal。updatePlayer が発射サイクルから毎フレーム計算)へ追従する。
+  // リリース直後(release > 0)は目標を 0 に固定し、弦が「バチン」と戻って見える速さで抜く
+  const bowC = CONFIG.player.bow;
+  if (A.release > 0) A.release = Math.max(0, A.release - dt / bowC.releaseTime);
+  const releasing = A.release > 0;
+  A.draw += ((releasing ? 0 : A.drawGoal) - A.draw) *
+    Math.min(1, dt * (releasing ? bowC.releaseSnap : bowC.drawSmoothing));
   if (player.moving) {
     // 歩調は移動速度スキルに合わせて速める(速いのに足のリズムが同じだと滑って見える)
     const sPrev = Math.sin(A.run);
@@ -1131,21 +1156,33 @@ function updatePlayerAnimation(dt) {
 
   // 腕: 走りの振りと構えポーズをブレンド
   // 弓手(armL)は走行中も前に構えたまま。射手(armR)は肘の曲げだけで弦を引く
+  // 引き絞り(draw ≈ 1)ではわずかに震え、リリース(fling)では引き手が外へ流れて
+  // 弓手が跳ね上がる(フォロースルー)
   const rest = 1 - aim;
-  P.armL.shoulder.rotation.x = (-0.45 - s * 0.35 * w) * rest + (-1.5) * aim;
+  const draw = A.draw;
+  const fling = A.release * A.release;                       // 放った瞬間が最大で滑らかに収まる
+  const tension = Math.max(0, (draw - 0.85) / 0.15) * aim;   // 引き絞り度(引き切り付近だけ 1)
+  const tremor = Math.sin(A.idle * 46) * bowC.holdTremor * tension;
+  P.armL.shoulder.rotation.x = (-0.45 - s * 0.35 * w) * rest +
+    (-1.5 - bowC.recoil * fling + tremor * 0.5) * aim;
   P.armL.shoulder.rotation.z = -0.14 * rest + 0.38 * aim;   // 構えでは弓をやや体の中心へ寄せる
   P.armL.elbow.rotation.x = (0.5 + Math.max(0, s) * 0.3 * w) * rest + 0.05 * aim;
-  P.armR.shoulder.rotation.x = (s * 0.7 * w) * rest + (-1.1) * aim;
-  P.armR.shoulder.rotation.z = 0.14 * rest + 0.35 * aim;
-  P.armR.elbow.rotation.x = (0.35 + Math.max(0, -s) * 0.45 * w) * rest + (0.5 + 1.5 * A.draw) * aim;
+  P.armR.shoulder.rotation.x = (s * 0.7 * w) * rest + (-1.1 + 0.3 * fling) * aim;
+  P.armR.shoulder.rotation.z = 0.14 * rest + (0.35 + 0.5 * fling) * aim;
+  P.armR.elbow.rotation.x = (0.35 + Math.max(0, -s) * 0.45 * w) * rest +
+    (0.5 + 1.7 * draw + tremor) * aim;
 
   // 体幹: 走りは前傾+上下動、構えは半身。頭が重いので走ると少し揺れる
   // (俯瞰では脚が見えないので、走りらしさは前傾・弾み・左右の揺れで作る)
-  P.root.rotation.x = 0.2 * w;
+  // 構え中は引きに合わせて半身が深まり、リリースでわずかに反動が戻る
+  // (俯瞰ではヨー回転がいちばん目立つので、引き絞り→解放は体のひねりで見せる)
+  // 引き絞りはわずかに仰け反る: 張力に耐える見た目に加え、俯瞰で頭が後ろへ
+  // 逃げるので、奥向きに構えたときも矢先が大きな頭に隠れない
+  P.root.rotation.x = 0.2 * w + (-0.14 * draw + 0.1 * fling) * aim;
   P.root.position.y = Math.abs(s) * 0.11 * w + Math.sin(A.idle * 2.2) * 0.014 * (1 - w);
-  P.torso.rotation.y = -0.16 * aim;
+  P.torso.rotation.y = (-0.16 - 0.14 * draw + 0.1 * fling) * aim;
   P.torso.rotation.z = s * 0.09 * w;
-  P.head.rotation.y = 0.16 * aim;
+  P.head.rotation.y = (0.16 + 0.12 * draw) * aim;           // 引くほど矢の向く先を見据える
   P.head.rotation.x = -0.08 * w;
   P.head.rotation.z = -s * 0.1 * w;
 
@@ -1182,7 +1219,7 @@ function resetPlayer() {
   player.invincible = 0;
   player.moving = false;
   player.aiming = false;
-  Object.assign(player.anim, { run: 0, runW: 0, aim: 0, draw: 0, idle: 0 });
+  Object.assign(player.anim, { run: 0, runW: 0, aim: 0, draw: 0, drawGoal: 0, release: 0, idle: 0 });
   resetDust();
   updatePlayerAnimation(0);
 }
@@ -2673,22 +2710,29 @@ function updatePlayer(dt) {
     const target = nearestEnemy();
     if (target) {
       player.mesh.lookAt(target.mesh.position.x, 0, target.mesh.position.z);
+      // ラピッドショットは攻撃速度アップ
+      const interval = CONFIG.player.fireInterval / level.stats.fireMul;
       player.fireTimer -= dt;
       if (player.fireTimer <= 0) {
-        // ラピッドショットは攻撃速度アップ
-        const rate = level.stats.fireMul;
-        player.fireTimer = CONFIG.player.fireInterval / rate;
+        player.fireTimer = interval;
         const dir = new THREE.Vector3()
           .subVectors(target.mesh.position, pos);
         dir.y = 0; dir.normalize();
         const origin = pos.clone(); origin.y = 0.95;   // 弓を構える高さ
         firePlayerShot(origin, dir);                   // スキル(マルチ/バック/サイド等)込みで発射
-        player.anim.draw = 0;                          // 弦を放つ
+        player.anim.release = 1;                       // 弦を放つ(フォロースルー開始)
       }
+      // 弓の引きは発射サイクルに同期: 序盤の drawPortion で引き切り、
+      // 残りは引き絞ったまま溜め、fireTimer が尽きた瞬間に放つ。
+      // 停止直後は fireTimer が interval より短く丸められている(すぐ撃てる)ので clamp
+      const progress = 1 - clamp(player.fireTimer / interval, 0, 1);
+      player.anim.drawGoal = Math.min(1, progress / CONFIG.player.bow.drawPortion);
+    } else {
+      player.anim.drawGoal = 0;
     }
     player.aiming = !!target;
   }
-  if (moving) player.aiming = false;
+  if (moving) { player.aiming = false; player.anim.drawGoal = 0; }
 
   if (player.invincible > 0) {
     player.invincible -= dt;
