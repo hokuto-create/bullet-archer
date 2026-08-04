@@ -493,9 +493,30 @@ const CONFIG = {
     popScale: 1.55,                 // 出現直後の弾み
     popTime: 0.14,                  // 弾みが収まるまでの時間(秒)
     fadeStart: 0.55,                // 進行度がこれを超えてから薄くなり始める
-    color: '#fff4c9',               // 文字色(ヒットの種類で変えない)
+    // 文字色はヒットの種類で変える(直撃は白 / 燃焼・毒・連鎖の継続系は黄 / グレイズ強化は金)。
+    // 大きさも合わせて変えると、画面が数字だらけでも「いま効いた攻撃」が読み分けられる
+    colors: { normal: '#ffffff', dot: '#ffd23e', crit: '#ffc94d' },
+    scaleDot: 0.72, scaleCrit: 1.3, // dot / crit の数字の大きさ(normal 比)
+    tilt: 0.09,                     // 数字ごとのランダムな傾き(ラジアン。羅列の単調さを消す)
     outlineColor: '#20130a',        // 縁取り(明るい床の上でも読めるように)
     canvasW: 256, canvasH: 64, fontPx: 48,   // 文字を描くキャンバス(プール1要素につき1枚)
+  },
+  // ヒット・発射エフェクト(攻撃の手応え)。実装は「ヒット・発射エフェクト」セクション
+  fx: {
+    muzzle: { duration: 0.16, size: 1.15, grow: 2.1 },  // 発射の瞬間の白い閃光(強化ショットは金色)
+    trail: { length: 2.4, width: 0.22, opacity: 0.62, color: 0xffd873 },  // 矢の金色の軌跡
+    puff: { count: 20, duration: 0.28, size: 0.55, grow: 2.4, opacity: 0.85 },  // ヒットの白い煙
+    spark: {
+      count: 36,                    // プール(同時に出せる火花の数)
+      per: 3,                       // 1ヒットで飛び散る数
+      killPer: 7,                   // 撃破時に飛び散る数
+      duration: 0.34, size: 0.58,
+      speed: 7, upSpeed: 2.5,       // 初速(水平)と上向き成分
+      drag: 4.5,                    // 減速(指数減衰の係数)
+      spin: 7,                      // 回転の速さ(ラジアン/秒。個体ごとに ± でばらす)
+    },
+    hitFlash: 0.09,                 // 被弾で敵が白く光る時間(秒)
+    hitSquash: { amount: 0.22, time: 0.16 },  // 被弾のぷにっと潰れ(横に膨らみ縦に縮む)
   },
   camera: {
     // 平行投影なので offset は「見下ろす向き」だけを決める(距離は画の大きさに影響しない)
@@ -1250,7 +1271,7 @@ function makePool(size, buildMesh) {
     // elems: 自弾のエレメント(命中時に applyElems が読む。null なら無属性)
     items.push({
       mesh, active: false, vel: new THREE.Vector3(), damage: 0, life: 0,
-      near: false, grazed: false, pierce: 0, hits: null, elems: null,
+      near: false, grazed: false, pierce: 0, hits: null, elems: null, crit: false,
     });
   }
   return items;
@@ -1287,6 +1308,7 @@ function spawnFromPool(pool, pos, dir, speed, damage) {
     b.grazed = false;
     b.pierce = 0;
     b.elems = null;
+    b.crit = false;
     if (b.hits) b.hits.clear();
     if (pool === arrowPool) {
       b.mesh.lookAt(pos.clone().add(dir));
@@ -1303,6 +1325,206 @@ function deactivate(b) {
 }
 
 function clearPool(pool) { pool.forEach(deactivate); }
+
+// =====================================================================
+// ヒット・発射エフェクト
+// =====================================================================
+// 攻撃の手応えを作る4点セット: 発射の閃光 / 矢の軌跡 / ヒットの白い煙 / 星形の火花。
+// すべてプール + 事前生成テクスチャで、フレーム中に new しない(数値は CONFIG.fx)。
+// スプライトは常にカメラを向くので、俯瞰でも板の向きを気にしなくてよい
+const fxTextures = (function () {
+  function canvasTex(draw) {
+    const c = document.createElement('canvas');
+    c.width = c.height = 64;                 // 2の冪(WebGL1 でもミップマップが使える)
+    draw(c.getContext('2d'));
+    return new THREE.CanvasTexture(c);
+  }
+  // ソフトな円(煙・ぼかし光用)
+  const circle = canvasTex((ctx) => {
+    const g = ctx.createRadialGradient(32, 32, 4, 32, 32, 30);
+    g.addColorStop(0, 'rgba(255,255,255,1)');
+    g.addColorStop(0.65, 'rgba(255,255,255,0.55)');
+    g.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, 64, 64);
+  });
+  // 4方向に尖った星(キラッとした火花・閃光用)
+  const star = canvasTex((ctx) => {
+    ctx.translate(32, 32);
+    ctx.fillStyle = '#ffffff';
+    ctx.beginPath();
+    for (let i = 0; i < 4; i++) {
+      const a = (i / 4) * Math.PI * 2;
+      ctx.lineTo(Math.cos(a) * 30, Math.sin(a) * 30);
+      const m = a + Math.PI / 4;
+      ctx.lineTo(Math.cos(m) * 4.5, Math.sin(m) * 4.5);
+    }
+    ctx.closePath();
+    ctx.fill();
+  });
+  // 矢の軌跡(進行方向側が濃く、尾へ向けて消える縦グラデーション)
+  const trail = canvasTex((ctx) => {
+    const g = ctx.createLinearGradient(0, 0, 0, 64);
+    g.addColorStop(0, 'rgba(255,255,255,0.95)');
+    g.addColorStop(0.5, 'rgba(255,255,255,0.35)');
+    g.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, 64, 64);
+  });
+  return { circle, star, trail };
+})();
+
+function makeSpritePool(count, tex, blending, renderOrder) {
+  const items = [];
+  for (let i = 0; i < count; i++) {
+    const sp = new THREE.Sprite(new THREE.SpriteMaterial({
+      map: tex, transparent: true, opacity: 0, depthTest: false,
+      blending: blending || THREE.NormalBlending,
+    }));
+    sp.renderOrder = renderOrder;
+    sp.visible = false;
+    scene.add(sp);
+    items.push({ sp, life: 0, dur: 1, size: 1, grow: 1, opacity: 1, spin: 0, vel: new THREE.Vector3() });
+  }
+  return items;
+}
+// renderOrder: 煙(14) < 火花(15) < 閃光(16) < ダメージ数字(20)
+const puffPool = makeSpritePool(CONFIG.fx.puff.count, fxTextures.circle, THREE.NormalBlending, 14);
+const sparkPool = makeSpritePool(CONFIG.fx.spark.count, fxTextures.star, THREE.AdditiveBlending, 15);
+const flashPool = makeSpritePool(6, fxTextures.star, THREE.AdditiveBlending, 16);
+
+// プールから1つ確保する。空きが無ければ一番古いものを奪う(出ない方が違和感が大きい)
+function takeFx(pool) {
+  let item = null;
+  for (const it of pool) {
+    if (it.life <= 0) return it;
+    if (!item || it.life < item.life) item = it;
+  }
+  return item;
+}
+
+function spawnPuff(x, y, z, size, color) {
+  const C = CONFIG.fx.puff;
+  const p = takeFx(puffPool);
+  p.life = p.dur = C.duration;
+  p.size = size;
+  p.grow = C.grow;
+  p.opacity = C.opacity;
+  p.sp.visible = true;
+  p.sp.position.set(x, y, z);
+  p.sp.material.color.setHex(color);
+  p.sp.material.rotation = Math.random() * Math.PI;
+  return p;
+}
+
+function spawnSparks(x, y, z, n, color) {
+  const C = CONFIG.fx.spark;
+  for (let i = 0; i < n; i++) {
+    const s = takeFx(sparkPool);
+    s.life = s.dur = C.duration * (0.75 + Math.random() * 0.5);
+    s.size = C.size * (0.7 + Math.random() * 0.6);
+    s.opacity = 1;
+    s.spin = (Math.random() < 0.5 ? -1 : 1) * C.spin * (0.5 + Math.random());
+    const a = Math.random() * Math.PI * 2;
+    const sp = C.speed * (0.5 + Math.random() * 0.7);
+    s.vel.set(Math.cos(a) * sp, C.upSpeed * (0.4 + Math.random() * 0.8), Math.sin(a) * sp);
+    s.sp.visible = true;
+    s.sp.position.set(x, y, z);
+    s.sp.material.color.setHex(color);
+    s.sp.material.rotation = Math.random() * Math.PI;
+  }
+}
+
+function spawnFlash(x, y, z, size, color) {
+  const C = CONFIG.fx.muzzle;
+  const f = takeFx(flashPool);
+  f.life = f.dur = C.duration;
+  f.size = size;
+  f.grow = C.grow;
+  f.opacity = 1;
+  f.sp.visible = true;
+  f.sp.position.set(x, y, z);
+  f.sp.material.color.setHex(color);
+  f.sp.material.rotation = Math.random() * Math.PI;
+}
+
+// ヒットの手応え(白い煙 + 金の火花)。strength は強化ショットや撃破で盛る倍率
+function spawnHitFx(pos, height, strength) {
+  const C = CONFIG.fx;
+  spawnPuff(pos.x, height, pos.z, C.puff.size * strength, 0xffffff);
+  spawnSparks(pos.x, height, pos.z, C.spark.per, 0xffe27a);
+}
+
+// 撃破の弾け(大きめの煙2つ + 多めの火花 + 閃光)。敵の大きさに合わせて radius で盛る
+function spawnDeathFx(x, z, height, radius) {
+  const C = CONFIG.fx;
+  const k = Math.max(1, radius * 1.2);
+  spawnPuff(x, height, z, C.puff.size * 1.8 * k, 0xffffff);
+  spawnPuff(x + (Math.random() - 0.5) * 0.5, height + 0.25, z + (Math.random() - 0.5) * 0.5,
+    C.puff.size * 1.2 * k, 0xffffff);
+  spawnSparks(x, height, z, C.spark.killPer, 0xffe27a);
+  spawnFlash(x, height, z, C.muzzle.size * k, 0xfff4c9);
+}
+
+function updateFx(dt) {
+  // 煙: 膨らみながら薄れる
+  for (const p of puffPool) {
+    if (p.life <= 0) continue;
+    p.life -= dt;
+    if (p.life <= 0) { p.sp.visible = false; continue; }
+    const t = 1 - p.life / p.dur;                       // 0 → 1
+    const s = p.size * (1 + t * (p.grow - 1));
+    p.sp.scale.set(s, s, 1);
+    p.sp.material.opacity = p.opacity * (1 - t) * (1 - t);
+  }
+  // 火花: 飛び散りながら減速し、回転しつつ縮んで消える
+  const drag = CONFIG.fx.spark.drag;
+  for (const s of sparkPool) {
+    if (s.life <= 0) continue;
+    s.life -= dt;
+    if (s.life <= 0) { s.sp.visible = false; continue; }
+    s.sp.position.addScaledVector(s.vel, dt);
+    s.vel.multiplyScalar(Math.max(0, 1 - drag * dt));
+    s.sp.material.rotation += s.spin * dt;
+    const t = 1 - s.life / s.dur;
+    const sc = s.size * (1 - t * 0.8);
+    s.sp.scale.set(sc, sc, 1);
+    s.sp.material.opacity = 1 - t * t;
+  }
+  // 閃光: 一瞬で膨らんで消える
+  for (const f of flashPool) {
+    if (f.life <= 0) continue;
+    f.life -= dt;
+    if (f.life <= 0) { f.sp.visible = false; continue; }
+    const t = 1 - f.life / f.dur;
+    const s = f.size * (1 + t * (f.grow - 1));
+    f.sp.scale.set(s, s, 1);
+    f.sp.material.opacity = 1 - t;
+  }
+}
+
+function resetFx() {
+  for (const pool of [puffPool, sparkPool, flashPool]) {
+    for (const it of pool) { it.life = 0; it.sp.visible = false; }
+  }
+}
+
+// 矢の軌跡(金色の流星)。矢メッシュの子として後方へ伸ばす。
+// 矢のローカル +Y が進行方向なので、XY 平面のリボンは「進行方向 × 水平右」の
+// 水平な帯になり、俯瞰からそのまま見える。ジオメトリ・マテリアルは全矢で共有
+(function attachArrowTrails() {
+  const T = CONFIG.fx.trail;
+  const geo = new THREE.PlaneGeometry(T.width, T.length);
+  const mat = new THREE.MeshBasicMaterial({
+    map: fxTextures.trail, color: T.color, transparent: true, opacity: T.opacity,
+    depthWrite: false, side: THREE.DoubleSide, blending: THREE.AdditiveBlending,
+  });
+  for (const b of arrowPool) {
+    const t = new THREE.Mesh(geo, mat);
+    t.position.y = -(T.length / 2 + 0.25);
+    b.mesh.add(t);
+  }
+})();
 
 // =====================================================================
 // グレイズ・強化ショット
@@ -1414,12 +1636,12 @@ const dmgTextPool = (function () {
     mesh.visible = false;
     scene.add(mesh);
     // base: 浮上前の基準位置。毎フレームここから上方向へ足し直す
-    items.push({ mesh, ctx, tex, life: 0, base: new THREE.Vector3() });
+    items.push({ mesh, ctx, tex, life: 0, base: new THREE.Vector3(), scaleMul: 1, tilt: 0 });
   }
   return items;
 })();
 
-function drawDmgText(item, text) {
+function drawDmgText(item, text, color) {
   const C = CONFIG.damageText;
   const ctx = item.ctx;
   ctx.clearRect(0, 0, C.canvasW, C.canvasH);
@@ -1427,7 +1649,7 @@ function drawDmgText(item, text) {
   ctx.lineWidth = C.fontPx * 0.22;
   ctx.strokeStyle = C.outlineColor;
   ctx.strokeText(text, C.canvasW / 2, C.canvasH / 2);
-  ctx.fillStyle = C.color;
+  ctx.fillStyle = color;
   ctx.fillText(text, C.canvasW / 2, C.canvasH / 2);
   item.tex.needsUpdate = true;
 }
@@ -1437,7 +1659,8 @@ const dmgTextRight = new THREE.Vector3();
 
 // pos: ワールド座標 / up: そこから画面上へ逃がす距離 /
 // spread: 画面横方向にばらす幅(HPバーの上に数字が居座らないよう、バーの幅に応じて広げる)
-function spawnDamageText(pos, amount, up, spread) {
+// kind: damageEnemy と同じ(undefined = 直撃 / 'crit' = 強化 / 'dot' = 継続系)
+function spawnDamageText(pos, amount, up, spread, kind) {
   const C = CONFIG.damageText;
   // 空きが無ければ一番古い(残り時間が最短の)ものを奪う。
   // マルチショットの同時ヒットでも「出たはずの数字が出ない」ことがないように
@@ -1447,7 +1670,9 @@ function spawnDamageText(pos, amount, up, spread) {
     if (!item || it.life < item.life) item = it;
   }
   item.life = C.duration;
-  drawDmgText(item, '-' + Math.max(1, Math.round(amount)));
+  item.scaleMul = kind === 'crit' ? C.scaleCrit : kind === 'dot' ? C.scaleDot : 1;
+  item.tilt = (Math.random() * 2 - 1) * C.tilt;
+  drawDmgText(item, '-' + Math.max(1, Math.round(amount)), C.colors[kind] || C.colors.normal);
 
   dmgTextUp.set(0, 1, 0).applyQuaternion(camera.quaternion);
   dmgTextRight.set(1, 0, 0).applyQuaternion(camera.quaternion);
@@ -1471,9 +1696,10 @@ function updateDamageTexts(dt) {
     item.mesh.position.copy(item.base)
       .addScaledVector(dmgTextUp, C.rise * (1 - (1 - t) * (1 - t)));
     item.mesh.quaternion.copy(camera.quaternion);
+    item.mesh.rotateZ(item.tilt);   // カメラ正面を向けたまま、画面上でわずかに傾ける
     // 出現直後だけ大きく弾ませる(当たった瞬間の手応え)
     const pop = 1 + (C.popScale - 1) * Math.max(0, 1 - elapsed / C.popTime);
-    const h = C.height * pop;
+    const h = C.height * pop * item.scaleMul;
     item.mesh.scale.set(h * aspect, h, 1);
     item.mesh.material.opacity = t < C.fadeStart ? 1 : 1 - (t - C.fadeStart) / (1 - C.fadeStart);
   }
@@ -1655,6 +1881,7 @@ function fireArrow(origin, dir, angle, speed, baseDamage, mul) {
   if (b) {
     b.pierce = level.stats.pierce;
     b.elems = level.stats.arrowElems;   // 矢のエレメント(命中時に applyElems が読む)
+    b.crit = (mul || 1) > 1;            // グレイズ強化ショット(数字を金色・大きめに出す)
   }
   return b;
 }
@@ -1671,6 +1898,11 @@ function firePlayerShot(origin, dir) {
     spawnGrazeFx(origin.x, origin.z, 1.6, 0xffd76a);   // 強化ショットの金色の光
     updateGrazeHud();
   }
+  // 発射の閃光: 弓の少し先に白い星型フラッシュ(強化ショットは金色で一回り大きく)
+  spawnFlash(
+    origin.x + dir.x * 0.8, origin.y + 0.1, origin.z + dir.z * 0.8,
+    CONFIG.fx.muzzle.size * (mul > 1 ? 1.5 : 1), mul > 1 ? 0xffd76a : 0xffffff
+  );
   const count = 1 + st.multishot;
   for (let i = 0; i < count; i++) {
     fireArrow(origin, dir, (i - (count - 1) / 2) * CONFIG.level.spread, C.arrowSpeed, C.arrowDamage, mul);
@@ -1731,7 +1963,7 @@ function chainLightning(from, dmg) {
     if (other === from || !other.hpBar) continue;
     if (other.mesh.position.distanceToSquared(pos) > T.radius * T.radius) continue;
     spawnBolt(other.mesh.position.x, other.mesh.position.z, ELEM_COLORS.thunder, 0.5);
-    damageEnemy(other, dmg);
+    damageEnemy(other, dmg, 'dot');
   }
 }
 
@@ -2357,7 +2589,7 @@ function spawnEnemy(typeName, waveNum) {
     burnT: 0, burnTick: 0, burnDmg: 0,    // 燃焼: 残り時間 / 次のダメージまで / 1回分のダメージ
     freezeT: 0, freezeCd: 0,              // 凍結: 残り時間 / 再凍結までのクールダウン
     poisonTick: 0, poisonDmg: 0,          // 毒: 次のダメージまで / 毎秒のダメージ(0 なら未感染)
-    frozenTint: false,                    // 凍結の色を付けたか(解除時に戻すための印)
+    hitFlash: 0, hitSquash: 0,            // 被弾の白フラッシュ / ぷにっと潰れの残り時間
   };
   enemies.push(enemy);
   return enemy;
@@ -2384,22 +2616,30 @@ function removeEnemy(enemy) {
   if (i >= 0) enemies.splice(i, 1);
 }
 
-function damageEnemy(enemy, amount) {
+// kind: undefined = 直撃(白い数字 + ヒットFX)/ 'crit' = グレイズ強化ショット(金色・大きめ)/
+//       'dot' = 燃焼・毒・雷連鎖などの継続/巻き添え(黄色・小さめ。火花は出さない)
+function damageEnemy(enemy, amount, kind) {
   enemy.hp -= amount;
   const body = enemy.mesh.userData.body;
-  body.material.emissive = new THREE.Color(0x661111);
-  setTimeout(() => { body.material.emissive = new THREE.Color(0x000000); }, 80);
+  // 被弾の白フラッシュとぷにっと潰れ(タイマーは updateEnemy が進める)
+  enemy.hitFlash = CONFIG.fx.hitFlash;
+  if (kind !== 'dot') {
+    enemy.hitSquash = CONFIG.fx.hitSquash.time;
+    spawnHitFx(enemy.mesh.position, body.position.y, kind === 'crit' ? 1.5 : 1);
+  }
   // 与ダメージを数値で出す(removeEnemy より先に。死んだ敵の位置は取れなくなる)。
   // 胴の高さは見下ろし角で画面上 camUpDot 倍に潰れるので、そこだけ掛けて補正する
   spawnDamageText(
     enemy.mesh.position, amount, body.position.y * camUpDot + 0.3,
-    enemy.hpBar.w / 2 + CONFIG.damageText.jitter
+    enemy.hpBar.w / 2 + CONFIG.damageText.jitter, kind
   );
   if (enemy.hp <= 0) {
     state.score += enemy.def.score;
     gainExp(enemy.def.exp || 0);    // レベルアップはキューに積むだけ(3択は animate が開く)
     const ex = enemy.mesh.position.x, ez = enemy.mesh.position.z;
+    const ey = body.position.y, er = enemy.def.radius;
     removeEnemy(enemy);
+    spawnDeathFx(ex, ez, ey, er);   // 撃破の弾け(敵が消えた位置に出す)
     onKillArts(ex, ez);             // 弔いの星(倒した位置に落とす)
     updateHud();
     if (enemies.length === 0 && state.phase === 'playing') onWaveClear();
@@ -2428,7 +2668,7 @@ function updateEnemy(enemy, dt) {
     enemy.burnTick += dt;
     if (enemy.burnTick >= E.fire.tickEvery) {
       enemy.burnTick = 0;
-      damageEnemy(enemy, enemy.burnDmg);
+      damageEnemy(enemy, enemy.burnDmg, 'dot');
       if (!enemy.hpBar) return;           // 燃え尽きた
     }
   }
@@ -2436,20 +2676,25 @@ function updateEnemy(enemy, dt) {
     enemy.poisonTick += dt;
     if (enemy.poisonTick >= E.poison.tickEvery) {
       enemy.poisonTick = 0;
-      damageEnemy(enemy, enemy.poisonDmg);
+      damageEnemy(enemy, enemy.poisonDmg, 'dot');
       if (!enemy.hpBar) return;           // 毒で倒れた
     }
   }
   const frozen = enemy.freezeT > 0;
   if (frozen) enemy.freezeT -= dt;
-  // 凍結中は青く染める。ダメージの赤発光(setTimeout)と競合しても毎フレーム上書きされる
+  // 発光は毎フレーム決め直す: 被弾の白フラッシュ > 凍結の青 > 消灯。
+  // タイマー式なので setTimeout と違いポーズ中に勝手に進まない
   const bodyMat = enemy.mesh.userData.body.material;
-  if (frozen) {
-    bodyMat.emissive.setHex(0x2255aa);
-    enemy.frozenTint = true;
-  } else if (enemy.frozenTint) {
-    enemy.frozenTint = false;
-    bodyMat.emissive.setHex(0x000000);
+  if (enemy.hitFlash > 0) enemy.hitFlash -= dt;
+  bodyMat.emissive.setHex(enemy.hitFlash > 0 ? 0xb8b8b8 : frozen ? 0x2255aa : 0x000000);
+  // 被弾のぷにっと潰れ: 山なりに横へ膨らみ縦に縮む(当たり判定には影響しない)
+  const sq = CONFIG.fx.hitSquash;
+  if (enemy.hitSquash > 0) {
+    enemy.hitSquash -= dt;
+    const k = Math.sin(Math.max(0, enemy.hitSquash / sq.time) * Math.PI) * sq.amount;
+    enemy.mesh.scale.set(1 + k, 1 - k * 0.7, 1 + k);
+  } else {
+    enemy.mesh.scale.setScalar(1);
   }
 
   const toPlayer = new THREE.Vector3().subVectors(player.mesh.position, pos);
@@ -2793,7 +3038,7 @@ function updateProjectiles(dt) {
         // 連鎖がこの敵自身を倒すことはない(chainLightning は当てた敵を除く)が、
         // 巻き添えで敵配列が縮むことはあるので damageEnemy 側の生存確認に hpBar を使う
         applyElems(e, b.damage, b.elems);
-        if (e.hpBar) damageEnemy(e, b.damage);
+        if (e.hpBar) damageEnemy(e, b.damage, b.crit ? 'crit' : undefined);
         // 命の芽吹き: ヒットするたび確率でHP回復(矢・守護者の弾どちらでも発動)
         if (level.stats.regenChance > 0 && player.hp < player.maxHp && Math.random() < level.stats.regenChance) {
           player.hp = Math.min(player.maxHp, player.hp + SKILLS.regen.value);
@@ -2867,6 +3112,7 @@ function animate() {
     updateProjectiles(dt);
     updateArts(dt);
     updateGrazeFx(dt);
+    updateFx(dt);
     updateDamageTexts(dt);
     updateDust(dt);
   }
@@ -3125,6 +3371,7 @@ function startGame(chapterIndex) {
   resetLevel();
   resetArts();                       // resetLevel の後(taken が空なら守護者も退場)
   resetDamageTexts();
+  resetFx();
   titleScreen.style.display = 'none';
   gameoverScreen.style.display = 'none';
   levelupScreen.style.display = 'none';
@@ -3157,6 +3404,7 @@ function chapterClear() {
   clearPool(bulletPool);
   clearArtsFx();                     // 落下中の星・霊剣も掃除(守護者は「このまま続ける」用に残す)
   resetDamageTexts();                // 'clear' 中は animate() が止まるので消し残りを掃除する
+  resetFx();
   ccSub.textContent = ch.name + '  ' + ch.subtitle;
   ccStats.innerHTML =
     'WAVE ' + ch.waves + ' 制覇 / Lv ' + level.lv + '<br>' +
@@ -3185,6 +3433,7 @@ function goTitle() {
   clearPool(arrowPool);
   clearPool(bulletPool);
   clearArtsFx();
+  resetFx();
   despawnGuardians();                // タイトルにお供だけ浮いていないように
   state.phase = 'title';
   renderChapterSelect();             // 解放されたチャプターを反映
