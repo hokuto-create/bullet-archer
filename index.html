@@ -396,7 +396,7 @@ const CONFIG = {
   // グレイズ: 敵弾を「当たらないギリギリ」で通したときの判定と演出
   graze: {
     innerRadius: 0.55,              // これより内側はグレイズにしない(実際の被弾判定はこれより外なので下限として働く)
-    outerRadius: 1.3,               // ここまで近づいた弾がグレイズ成立
+    outerRadius: 2,                 // ここまで近づいた弾がグレイズ成立
     rangeRingWidth: 0.06,           // 判定範囲リング(outerRadius に沿って常時表示)の線の太さ
     rangeRingOpacity: 0.16,         // 同リングの普段の濃さ(視界の邪魔にならない薄さに)
     rangeRingFlashOpacity: 0.55,    // グレイズ成立の瞬間の濃さ
