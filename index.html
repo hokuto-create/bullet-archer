@@ -369,11 +369,14 @@ const CONFIG = {
       drawPortion: 0.6,             // 発射間隔のうち弦を引くのに使う割合(残りは引き絞ったまま狙いを溜める)
       drawSmoothing: 16,            // 引きの追従の速さ(指数減衰の係数。大きいほどキビキビ)
       holdTremor: 0.02,             // 引き絞り中のわずかな震え(弦の張りつめを見せる。ラジアン)
-      releaseTime: 0.15,            // 放った後のフォロースルー時間(秒)
+      releaseTime: 0.16,            // 放った後のフォロースルー時間(秒)
       releaseSnap: 40,              // リリース時に弦(=引き手)が戻る速さ(指数減衰の係数)
       drawDepth: 0.35,              // 引き切りで弦を後ろへ引く距離(弓ローカル)。腕の実座標だと
                                     // デフォルメの短い腕でほぼ折れないので、引き量から直接決める
-      recoil: 0.22,                 // 放った瞬間の弓手の跳ね上がり・体の反動の強さ(ラジアン)
+      stance: 0.85,                 // 構えの半身(左肩を敵へ向ける体の開き。ラジアン)
+      recoil: 0.25,                 // 放った瞬間の弓手の跳ね上がり(ラジアン)
+      recoilPitch: 0.3,             // リリース反動ののけぞり(ラジアン)
+      recoilBack: 0.24,             // リリース反動で体が後ろへ持っていかれる距離
     },
     // 走りの土煙(足が地面を蹴るたびに出す。俯瞰では脚がほぼ見えないので、走っている感はこれで出す)
     dust: { count: 10, duration: 0.45, size: 0.28, opacity: 0.6, grow: 2.2, back: 0.45 },
@@ -1176,34 +1179,41 @@ function updatePlayerAnimation(dt) {
   P.legR.knee.rotation.x = (0.1 + Math.max(0, s) * 0.8) * w;
 
   // 腕: 走りの振りと構えポーズをブレンド
-  // 弓手(armL)は走行中も前に構えたまま。射手(armR)は肘の曲げだけで弦を引く
-  // 引き絞り(draw ≈ 1)ではわずかに震え、リリース(fling)では引き手が外へ流れて
+  // 構えは弓道の半身: 体を stance ぶん開き(左肩が敵側)、弓手(armL)は射線に沿って
+  // 真っ直ぐ伸ばし、引き手(armR)は肘だけでなく**肩ごと**後ろへ引く。
+  // 引き絞り(draw ≈ 1)ではわずかに震え、リリース(fling)では引き手が後ろへ流れて
   // 弓手が跳ね上がる(フォロースルー)
   const rest = 1 - aim;
   const draw = A.draw;
   const fling = A.release * A.release;                       // 放った瞬間が最大で滑らかに収まる
   const tension = Math.max(0, (draw - 0.85) / 0.15) * aim;   // 引き絞り度(引き切り付近だけ 1)
   const tremor = Math.sin(A.idle * 46) * bowC.holdTremor * tension;
+  const S = bowC.stance;
+  // 弓手: 肩を x=-π/2 で水平に上げ、z=-stance で体の開きを打ち消すと腕が射線に重なる
   P.armL.shoulder.rotation.x = (-0.45 - s * 0.35 * w) * rest +
-    (-1.5 - bowC.recoil * fling + tremor * 0.5) * aim;
-  P.armL.shoulder.rotation.z = -0.14 * rest + 0.38 * aim;   // 構えでは弓をやや体の中心へ寄せる
+    (-1.52 - bowC.recoil * fling + tremor * 0.5) * aim;
+  P.armL.shoulder.rotation.z = -0.14 * rest + (-S + 0.06) * aim;
   P.armL.elbow.rotation.x = (0.5 + Math.max(0, s) * 0.3 * w) * rest + 0.05 * aim;
-  P.armR.shoulder.rotation.x = (s * 0.7 * w) * rest + (-1.1 + 0.3 * fling) * aim;
-  P.armR.shoulder.rotation.z = 0.14 * rest + (0.35 + 0.5 * fling) * aim;
+  // 引き手: draw 0 では弦へ手を伸ばし(前方)、draw 1 で肩ごと後方へ。
+  // リリースでは勢いでさらに後ろ外側へ流れる
+  P.armR.shoulder.rotation.x = (s * 0.7 * w) * rest +
+    (-1.0 + 2.2 * draw + 0.35 * fling) * aim;
+  P.armR.shoulder.rotation.z = 0.14 * rest + (-0.2 + 1.0 * draw + 0.5 * fling) * aim;
   P.armR.elbow.rotation.x = (0.35 + Math.max(0, -s) * 0.45 * w) * rest +
-    (0.5 + 1.7 * draw + tremor) * aim;
+    (0.35 + 0.75 * draw + tremor) * aim;
 
-  // 体幹: 走りは前傾+上下動、構えは半身。頭が重いので走ると少し揺れる
-  // (俯瞰では脚が見えないので、走りらしさは前傾・弾み・左右の揺れで作る)
-  // 構え中は引きに合わせて半身が深まり、リリースでわずかに反動が戻る
-  // (俯瞰ではヨー回転がいちばん目立つので、引き絞り→解放は体のひねりで見せる)
-  // 引き絞りはわずかに仰け反る: 張力に耐える見た目に加え、俯瞰で頭が後ろへ
-  // 逃げるので、奥向きに構えたときも矢先が大きな頭に隠れない
-  P.root.rotation.x = 0.2 * w + (-0.14 * draw + 0.1 * fling) * aim;
+  // 体幹: 走りは前傾+上下動。構えは root ごと半身に開く(弓は updateBowPose が
+  // 体の向きに関係なく射線へ向け続けるので、体を開いても矢はずれない)。
+  // 引くほど上体のひねりが深まり、リリースの反動で体が後ろへ持っていかれる
+  // (のけぞり recoilPitch + 後ずさり recoilBack。fling は放った瞬間が最大)
+  P.root.rotation.y = S * aim;
+  P.root.rotation.x = 0.2 * w + (-0.1 * draw - bowC.recoilPitch * fling) * aim;
   P.root.position.y = Math.abs(s) * 0.11 * w + Math.sin(A.idle * 2.2) * 0.014 * (1 - w);
-  P.torso.rotation.y = (-0.16 - 0.14 * draw + 0.1 * fling) * aim;
+  P.root.position.z = -bowC.recoilBack * fling * aim;        // 射線と逆(手前)へ後ずさる
+  P.torso.rotation.y = (0.2 * draw - 0.15 * fling) * aim;    // 上体は半身からさらにひねる
   P.torso.rotation.z = s * 0.09 * w;
-  P.head.rotation.y = (0.16 + 0.12 * draw) * aim;           // 引くほど矢の向く先を見据える
+  // 頭: 体は開いても目線は敵へ(半身+ひねりを打ち消して射線の先を見据える)
+  P.head.rotation.y = (-S * 0.8 - 0.18 * draw) * aim;
   P.head.rotation.x = -0.08 * w;
   P.head.rotation.z = -s * 0.1 * w;
 
