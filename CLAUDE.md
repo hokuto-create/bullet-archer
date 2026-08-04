@@ -105,7 +105,11 @@ GitHub Pages で公開する前提の、ビルド不要な単一 `index.html` �
     各スキルは `SKILLS` の `rarity` フィールドで段を持つ。`rollRarityTier()` が
     候補(未MAX)の残っている段だけで重みを引いて**段を1つ**決め、3択はその段の中からだけ作る
     (**提示されるスキルのレア度は毎回揃う**)。候補が尽きた段は抽選から外れて重みが再配分される
-    (legendary は `star_twin` 双つ星が入っている)。
+    (legendary は攻撃手段ごとに1枚: `star_twin` 双つ星 / `homing` 隼の瞳(矢が追尾。
+    `steerArrow()` が最寄りの敵へ旋回)/ `sword_wave` 剣気解放(霊剣の着弾に50%の範囲ダメージ)/
+    `guard_beast` 聖獣化(守護者の弾が巨大化+貫通、落雷2連)/ `graze_dance` 弾幕遊戯
+    (グレイズ判定半径 ×1.5 = `level.stats.grazeRange`、強化ショット倍率 +0.5 = `grazeFlat`)。
+    挙動系の調整値は各 SKILLS エントリのフィールドに持つ)。
     段の候補が3未満のとき(エピック以上・終盤の取り切り)は**ある分だけ**提示し、
     `#skill-cards` の列数と幅をインラインで枚数に合わせる。キー選択(1/2/3)は
     `levelupPicks[i]` の存在チェックがあるので枚数が減っても安全。
@@ -121,12 +125,19 @@ GitHub Pages で公開する前提の、ビルド不要な単一 `index.html` �
     `playRarityTease()` がカード出現までの秒数を返し、`--in-delay` の起点になる。
     levelup ポーズ中なので setTimeout 駆動でよく、`closeLevelUp()` と再抽選時に
     `clearRarityTease()` でタイマーと光球を確実に消す。色は `CONFIG.level.rarity` を共用
-  - スキル一覧(id: 表示名): `multishot` 乱れ撃ち(扇状+1本)/ `power` 剛弓の一撃(+25%)/
-    `rapid` 疾風の指(攻撃速度+20%)/ `boots` 韋駄天の脚(移動+10%)/
+  - スキル一覧(id: 表示名): `multishot` 乱れ撃ち(扇状+1本)/ `power` 剛弓の一撃(+10%)/
+    `rapid` 疾風の指(攻撃速度+10%)/ `boots` 韋駄天の脚(移動+10%)/
     `vital` 勇者の血脈(最大HP+25。`player.maxHp` を増やす。`CONFIG.player.maxHp` は初期値)/
     `pierce` 射抜きの極意(`b.pierce` と `b.hits` の Set で多重ヒット防止)/
-    `back` 背中の目 / `side` 両翼の構え / `grazeup` 紙一重の妙 / `regen` 命の芽吹き。
-    ほかに召喚攻撃・エレメント系が26種(下の「召喚攻撃とエレメント」参照)
+    `back` 背中の目 / `side` 両翼の構え / `grazeup` 紙一重の妙 /
+    `regen` 命の芽吹き(ヒット時に確率でHP回復)。
+    **ステータス強化はコモン +10% とレア +20% の2段構成**(`mighty` 破軍の剛弓 / `flurry` 神速の指、
+    召喚側は `summon_mastery` 召喚の真髄 / `guard_oath` 守護者の誓い が各コモン版の上位)。
+    さらに `warlord` 軍神の加護(epic)は矢と召喚の両方に**乗算**で +20%(`recomputeSkillStats()` の
+    `allMul`。`damageMul` と `summonMul` の両方に掛かるので全攻撃・属性DoTまで一括で伸びる)。
+    `summon_king` 召喚王の威光(epic)は召喚のダメージ乗算 +20% に加えて「速さ」も +20%
+    (`summonRate`。星・剣の発動率 ×1.2、剣の雨の周期 ÷1.2、守護者の `guardianRate` ×1.2 として焼き込む)。
+    ほかに召喚攻撃・エレメント系が28種(下の「召喚攻撃とエレメント」参照)
   - **表示名は効果の直訳にしない**。何が起きるかは `desc` に全部書いてあるので、
     `name` は技名らしい呼び名にする(「貫通の矢」→「射抜きの極意」)
   - 3択のカードは**必ず横一列**。`#skill-cards` は `grid-template-columns: repeat(3, 1fr)` で、
