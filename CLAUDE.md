@@ -128,6 +128,11 @@ GitHub Pages で公開する前提の、ビルド不要な単一 `index.html` �
     2倍→2.5倍→3倍と伸びる。倍率は `fireArrow()` の第6引数 `mul` で渡す
   - チャージは減衰しない。HUD のバーはチャージ数/上限を表し、チャージがある間は金色に点滅して
     「次の攻撃 ×2」のように倍率を表示する(`updateGrazeHud()`)
+  - **グレイズビルド「残心」**: `zanshin` 残心(epic。チャージ非消費・上限 `chargeCap` 10 に拡張
+    (`grazeChargeCap()`)。倍率は `zanshinMul()` = 1 + (強化ショット倍率−1) × チャージ/上限 —
+    紙一重の妙・弾幕遊戯で満タン倍率も伸びる。**被弾で全損**(`damagePlayer()`。明鏡止水で半減))/
+    `maai` 間合いの妙(rare。グレイズリング内の敵弾を `slow` 0.75 倍速に。移動前の位置で判定)/
+    `mirror` 明鏡止水(legendary。チャージ満タン中は全敵弾 `bulletSlow` 0.85 倍速+損失半減)
   - テレグラフレーザー(`ENEMY_TYPES.shooter.laser`): 予兆の細い赤線 0.8 秒 → 太いビーム 0.4 秒(15ダメージ)。
     発射点・角度は予兆開始時に固定して**追尾しない**ので、線の外へ出れば必ず避けられる。
     予兆〜発射の間は敵も足を止める(動くと線と実際のビームがずれるため)。
@@ -233,6 +238,11 @@ GitHub Pages で公開する前提の、ビルド不要な単一 `index.html` �
     プレイヤーの周囲を公転し、炎・氷・毒は弾(`orbPool`)、雷だけ即着弾の落雷。
     場のお供は `syncGuardians()` が `level.taken` から作り直す(取得時とリセット時だけ呼ぶ)。
     重ね取り(Lv2)は威力・攻撃間隔が `CONFIG.arts.guardian.lv2*` で強化される
+    - **守護者ビルド「野生」**: `guard_frenzy` 野生解放(epic。グレイズで `arts.frenzyT` が
+      `duration` 6秒に満タン → 狂化中は攻撃間隔半分(`rateMul`)+弾 `orbScale` 倍+体が脈打つ。
+      切れている間は間隔 `slowMul` 1.5倍に鈍る = グレイズが手綱)/
+      `guard_gallop` 早駆けの蹄(rare。公転速度 `orbitMul` 1.7倍)。
+      公転角は `arts.orbitA` の積分で持つ(速度が変わった瞬間に位置が跳ばないように)
   - 守護者の弾は矢と同じ当たり判定ループで処理する: `updateProjectiles()` は
     `playerShotPools`(= `[arrowPool, orbPool]`)を回す。自弾プールを増やすときはここに足す
   - **エレメント**(炎=燃焼 / 氷=凍結 / 雷=連鎖 / 毒=倒れるまでスリップ)は
