@@ -225,12 +225,14 @@ GitHub Pages で公開する前提の、ビルド不要な単一 `index.html` �
       **見切りの星は counter-battery**: グレイズした弾の撃ち主へ星を返す(敵弾の `owner` を
       `fireEnemyAttack()` で記録し、`onGraze(src)` → `onGrazeArts(src)` に流す。レーザー・月蝕の
       かき消しも撃ち主を渡す)。実効半径は `starRadius()` に集約
-  - **霊剣**(単体): 周期 `sword_rain`(段階は `intervals` 配列)/ 攻撃時 `sword_attack` /
-    被弾時 `sword_revenge`。ランダムな敵の頭上から落ち、落下中は対象を追う。
-    対象が先に倒れたら不発(演出だけ)。`sword_double` 剣嵐で一度の本数+1
+  - **霊剣(憑依剣)**(単体): 周期 `sword_rain`(段階は `intervals` 配列)/ 攻撃時 `sword_attack` /
+    被弾時 `sword_revenge`。**降下はしない**(星との差別化): 対象の斜め上の空間に半透明で実体化し
+    (`appearTime`。縮みながら固体化+閃光)、胴へ突き刺さる(`stabTime`)。突きの間も対象を追う。
+    刺さる前に対象が倒れたらスッと消えて不発。`sword_double` 剣嵐で一度の本数+1
     - **霊剣ビルド「剣印」**: `sword_oath` 剣印の誓い(epic。単発 `dmgMul` 0.7 に減るかわりに
       ヒットで剣印。`marks` 3 で処刑 = 印1本 `execRatio` 1.5 倍。`addSwordMark()`。
-      印は頭上で回る小剣 `markMesh`(共有ジオメトリ・敵ごと遅延生成、removeEnemy が回収))/
+      印は「体に刺さったまま残る小剣」`markGroup`(共有ジオメトリ・印ごとに小剣を追加、
+      removeEnemy が回収。処刑で一斉に弾ける))/
       `sword_guide` 追い打ちの剣(rare。`arts.lastHit`(矢・刃・守護者弾の最終ヒット先)を優先して狙う)/
       `sword_grave` 剣ノ墓標(legendary。処刑でとどめを刺すと `swordGrave()` が
       `ratio` 100% の衝撃波(半径 `radius` 2.5)+ `gravePool` の立つ剣の演出)
