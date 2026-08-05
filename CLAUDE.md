@@ -91,6 +91,10 @@ GitHub Pages で公開する前提の、ビルド不要な単一 `index.html` �
     ジオメトリは全敵で共有し、`removeEnemy()` ではマテリアルだけ捨てる
   - 削れた分は白い帯が `hpBar.lagSmoothing` 秒の指数減衰で遅れて追いつく。
     HP割合で緑→黄→赤に変わる。`depthTest: false` なので敵や壁に隠れない
+  - **プレイヤーのHPゲージもキャラの頭上に出す**(`CONFIG.hpBar.player`。色・遅れ・縁は敵と共通で、
+    位置合わせ・伸縮は `updateHpBarBoard()` に共通化)。更新は `animate()` 末尾の
+    `updatePlayerHpBar()` で、タイトル・ゲームオーバー中は非表示。
+    HUD 左上のHPバーは廃止し、数値ラベル(`#hp-label`)だけ残している
 - **与ダメージ数値**(数値は `CONFIG.damageText`): ヒットのたびに「-12」が敵の上に浮かんで消える
   - `damageEnemy()` が唯一の入口なので、そこから `spawnDamageText()` を呼ぶだけで
     全ヒットを拾える。**`removeEnemy()` より先に呼ぶ**(死んだ敵の位置は取れなくなる)
