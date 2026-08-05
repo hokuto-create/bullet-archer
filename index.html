@@ -270,6 +270,35 @@
     box-shadow: none; cursor: default;
   }
   .chapter-btn.locked:active { transform: none; }
+
+  /* ===== [DEBUG] スキル自由取得(使用感テスト用。リリース時にこのブロックを削除) ===== */
+  #dbg-skill-btn {
+    margin-top: 6px; padding: 4px 10px; font-size: 12px;
+    background: #2a3550; color: #cfe0ff; border: 1px solid #4a5a80; border-radius: 6px;
+    cursor: pointer; pointer-events: auto;
+  }
+  #dbg-panel {
+    position: fixed; inset: 0; display: none; align-items: center; justify-content: center;
+    background: rgba(8, 10, 18, .75); z-index: 60;
+  }
+  #dbg-box {
+    width: min(560px, 92vw); max-height: 84vh; display: flex; flex-direction: column;
+    background: #141a2b; border: 1px solid #3a4a70; border-radius: 12px; padding: 14px;
+  }
+  #dbg-title { color: #ffd76a; font-weight: bold; margin-bottom: 10px; font-size: 14px; }
+  #dbg-list { overflow-y: auto; display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; }
+  .dbg-row {
+    display: flex; align-items: center; gap: 6px; padding: 6px 8px;
+    background: #1b2338; border: 1px solid var(--rc); border-radius: 8px;
+    color: #e8eefc; font-size: 12px; cursor: pointer; text-align: left;
+  }
+  .dbg-row:disabled { opacity: .35; cursor: default; }
+  .dbg-name { flex: 1; }
+  .dbg-lv { color: var(--rc); }
+  #dbg-close {
+    margin-top: 10px; padding: 8px; background: #2a3550; color: #cfe0ff;
+    border: 1px solid #4a5a80; border-radius: 8px; cursor: pointer;
+  }
 </style>
 </head>
 <body>
@@ -288,6 +317,8 @@
       <div id="chapter-label">CHAPTER 1</div>
       <div id="wave-label">WAVE 1</div>
       <div id="score-label">SCORE 0</div>
+      <!-- [DEBUG] スキル自由取得ボタン(使用感テスト用。リリース時に削除) -->
+      <button id="dbg-skill-btn">🛠 スキル</button>
     </div>
   </div>
 </div>
@@ -303,6 +334,15 @@
   <div id="levelup-sub">スキルを1つ選ぼう(キー: 1 / 2 / 3)</div>
   <div id="rarity-tease"></div>
   <div id="skill-cards"></div>
+</div>
+
+<!-- ===== [DEBUG] スキル自由取得パネル(使用感テスト用。リリース時にこのブロックと対応CSS/JSを削除) ===== -->
+<div id="dbg-panel">
+  <div id="dbg-box">
+    <div id="dbg-title">🛠 スキル自由取得(テスト用・キー K で開閉)</div>
+    <div id="dbg-list"></div>
+    <button id="dbg-close">閉じる</button>
+  </div>
 </div>
 
 <div id="title-screen" class="screen">
@@ -3705,6 +3745,58 @@ function updateGrazeHud() {
       : 'GRAZE で次の攻撃を強化';
   }
 }
+
+// ===== [DEBUG] スキル自由取得(使用感テスト用。リリース時にこのセクションを丸ごと削除) =====
+// プレイ中に 🛠ボタン or キー K でパネルを開き、任意のスキルを取得できる。
+// requires ゲートも無視する(生成スキルなしの属性など、死に取得も試せる)。
+// 開いている間はレベルアップと同じポーズ扱いで、ウェーブクリアは waveQueued に退避される
+const dbgPanel = document.getElementById('dbg-panel');
+const dbgList = document.getElementById('dbg-list');
+
+function renderDbgPanel() {
+  const R = CONFIG.level.rarity;
+  let html = '';
+  for (const id in SKILLS) {
+    const s = SKILLS[id];
+    const tk = level.taken[id] || 0;
+    html += '<button class="dbg-row" data-id="' + id + '"' + (tk >= s.max ? ' disabled' : '') +
+      ' style="--rc:' + R[s.rarity].color + '">' +
+      '<span>' + s.icon + '</span><span class="dbg-name">' + s.name + '</span>' +
+      '<span class="dbg-lv">' + tk + '/' + s.max + '</span></button>';
+  }
+  dbgList.innerHTML = html;
+}
+
+function openDbgPanel() {
+  if (state.phase !== 'playing') return;
+  state.phase = 'levelup';          // ポーズ。ウェーブクリアの setTimeout は waveQueued に積まれる
+  renderDbgPanel();
+  dbgPanel.style.display = 'flex';
+}
+
+function closeDbgPanel() {
+  if (dbgPanel.style.display === 'none' || !dbgPanel.style.display) return;
+  dbgPanel.style.display = 'none';
+  if (state.phase === 'levelup') {
+    state.phase = 'playing';
+    if (state.waveQueued) { state.waveQueued = false; advanceWave(); }
+  }
+}
+
+document.getElementById('dbg-skill-btn').addEventListener('click', openDbgPanel);
+document.getElementById('dbg-close').addEventListener('click', closeDbgPanel);
+dbgList.addEventListener('click', (ev) => {
+  const row = ev.target.closest('.dbg-row');
+  if (!row || row.disabled) return;
+  takeSkill(row.dataset.id);
+  renderDbgPanel();                 // Lv 表示を更新
+});
+window.addEventListener('keydown', (ev) => {
+  if (ev.key !== 'k' && ev.key !== 'K') return;
+  if (dbgPanel.style.display === 'flex') closeDbgPanel();
+  else openDbgPanel();
+});
+// ===== [DEBUG] ここまで =====
 
 // 経験値バーと Lv 表示
 function updateExpHud() {
