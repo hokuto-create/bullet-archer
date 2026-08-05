@@ -292,9 +292,15 @@
     background: #1b2338; border: 1px solid var(--rc); border-radius: 8px;
     color: #e8eefc; font-size: 12px; cursor: pointer; text-align: left;
   }
-  .dbg-row:disabled { opacity: .35; cursor: default; }
+  .dbg-row.maxed { opacity: .55; cursor: default; }
   .dbg-name { flex: 1; }
   .dbg-lv { color: var(--rc); }
+  .dbg-minus {
+    width: 26px; height: 22px; flex: none; padding: 0;
+    background: #33202a; color: #ff9d9d; border: 1px solid #6a3a4a; border-radius: 6px;
+    font-size: 13px; line-height: 1; cursor: pointer;
+  }
+  .dbg-minus:disabled { opacity: .25; cursor: default; }
   #dbg-close {
     margin-top: 10px; padding: 8px; background: #2a3550; color: #cfe0ff;
     border: 1px solid #4a5a80; border-radius: 8px; cursor: pointer;
@@ -3759,12 +3765,32 @@ function renderDbgPanel() {
   for (const id in SKILLS) {
     const s = SKILLS[id];
     const tk = level.taken[id] || 0;
-    html += '<button class="dbg-row" data-id="' + id + '"' + (tk >= s.max ? ' disabled' : '') +
+    html += '<div class="dbg-row' + (tk >= s.max ? ' maxed' : '') + '" data-id="' + id + '"' +
       ' style="--rc:' + R[s.rarity].color + '">' +
       '<span>' + s.icon + '</span><span class="dbg-name">' + s.name + '</span>' +
-      '<span class="dbg-lv">' + tk + '/' + s.max + '</span></button>';
+      '<span class="dbg-lv">' + tk + '/' + s.max + '</span>' +
+      '<button class="dbg-minus"' + (tk <= 0 ? ' disabled' : '') + '>−</button></div>';
   }
   dbgList.innerHTML = html;
+}
+
+// スキルのレベルダウン(デバッグ専用: 通常プレイに「外す」導線はないので、
+// takeSkill の即時効果をここで逆向きに巻き戻す)
+function untakeSkill(id) {
+  const tk = level.taken[id] || 0;
+  if (tk <= 0) return;
+  level.taken[id] = tk - 1;
+  if (level.taken[id] === 0) delete level.taken[id];
+  recomputeSkillStats();
+  if (id === 'vital') {
+    player.maxHp -= SKILLS.vital.value;
+    player.hp = Math.min(player.hp, player.maxHp);
+    updateHud();
+  }
+  if (SKILLS[id].family === 'guardian') syncGuardians();
+  if (id === 'sword_oath') for (const e of enemies) e.swordMarks = 0;   // 印の表示を残さない
+  graze.charges = Math.min(graze.charges, grazeChargeCap());   // 残心を外したら上限3に収める
+  updateGrazeHud();
 }
 
 function openDbgPanel() {
@@ -3787,8 +3813,13 @@ document.getElementById('dbg-skill-btn').addEventListener('click', openDbgPanel)
 document.getElementById('dbg-close').addEventListener('click', closeDbgPanel);
 dbgList.addEventListener('click', (ev) => {
   const row = ev.target.closest('.dbg-row');
-  if (!row || row.disabled) return;
-  takeSkill(row.dataset.id);
+  if (!row) return;
+  if (ev.target.closest('.dbg-minus')) {          // −ボタン: レベルダウン
+    untakeSkill(row.dataset.id);
+  } else {                                        // 行本体: レベルアップ
+    if (row.classList.contains('maxed')) return;
+    takeSkill(row.dataset.id);
+  }
   renderDbgPanel();                 // Lv 表示を更新
 });
 window.addEventListener('keydown', (ev) => {
