@@ -1304,6 +1304,7 @@ const bulletPool = makePool(CONFIG.pool.bullets, () =>
 // 当たり方をするため playerShotPools には入れず updateCrescents() で回す。
 // ジオメトリは全刃で共有し、寿命でグローの明るさを変えるためマテリアルだけ刃ごとに持つ
 const CRESCENT_ARC = Math.PI * 1.35;          // 3/4 欠けの月
+const CRESCENT_GEO_R = 0.65;                  // ジオメトリの見た目半径(コアの外周)。判定半径→スケール換算用
 const crescentGeos = {
   glow: new THREE.TorusGeometry(0.55, 0.16, 10, 40, CRESCENT_ARC),
   core: new THREE.TorusGeometry(0.55, 0.075, 10, 40, CRESCENT_ARC),
@@ -1780,7 +1781,9 @@ const SKILLS = {
   // --- 弦月ビルド: 全員が単体で成立し、弦月の構えと揃うと役割が変わる(創発コンボ)。requires ゲートは使わない ---
   // 弦月の構え: 矢が研削の三日月刃になる。刃の寿命(合計ヒット数)はグレイズで回復する = 弾幕の濃さが燃料。
   // 射抜きの極意は刃では「寿命 +pierceLife/Lv」に変質し、隼の瞳は刃が敵に張り付く追尾になる
-  crescent:  { icon: '🌙', name: '弦月の構え', desc: '発射間隔が2倍に延びるかわりに、矢がゆっくり進む三日月の刃になる。刃は触れている敵を55%で刻み続け、合計8ヒットで砕ける。グレイズするたび飛んでいる刃の寿命+1', max: 1, intervalMul: 2.0, tickMul: 0.55, tickInterval: 0.15, life: 8, lifeMax: 12, pierceLife: 4, speedMul: 0.4, radius: 0.75, flightTime: 4, rarity: 'epic' },
+  // intervalMul 2.6 ≒ 発射サイクル約1秒(0.38×2.6)。radius はヒット判定半径で、
+  // 見た目のスケールも fireCrescent() がこの値から合わせる(通過だけでも2〜3刻み入る大きさ)
+  crescent:  { icon: '🌙', name: '弦月の構え', desc: '発射に約1秒のチャージが要るようになるかわりに、矢が大きな三日月の刃になる。刃は触れている敵を55%で刻み続け、合計8ヒットで砕ける。グレイズするたび飛んでいる刃の寿命+1', max: 1, intervalMul: 2.6, tickMul: 0.55, tickInterval: 0.15, life: 8, lifeMax: 12, pierceLife: 4, speedMul: 0.4, radius: 1.5, flightTime: 4, rarity: 'epic' },
   broadhead: { icon: '🔶', name: '大鏃',       desc: '矢が一回り大きくなり当たりやすくなる。三日月刃はさらに大きく・ゆっくりになり、長く敵に触れる', max: 1, hitMul: 1.4, crescentScale: 1.35, crescentSlow: 0.8, rarity: 'rare' },
   echo_head: { icon: '🔔', name: '残響の鏃',   desc: '矢が当たった敵に0.2秒後、40%のダメージがもう一度響く。三日月刃は刻む速さが2倍になる', max: 1, ratio: 0.4, delay: 0.2, rarity: 'epic' },
   eclipse:   { icon: '🌑', name: '月蝕',       desc: '矢と三日月刃が敵弾に触れるとかき消す。かき消した1発ごとにグレイズが成立する', max: 1, rarity: 'legendary' },
@@ -1989,7 +1992,8 @@ function fireCrescent(origin, dir, damage, crit) {
     b.tickT = 0;
     b.flash = 0;                      // グレイズ回復の白い瞬き
     b.scaleMul = bh ? bh.crescentScale : 1;
-    b.mesh.scale.setScalar(b.scaleMul);
+    // 見た目をヒット判定半径(cs.radius × 大鏃倍率)に合わせる
+    b.mesh.scale.setScalar((cs.radius / CRESCENT_GEO_R) * b.scaleMul);
     b.mesh.position.y = 0.6;
   }
   return b;

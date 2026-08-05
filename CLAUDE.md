@@ -181,7 +181,7 @@ GitHub Pages で公開する前提の、ビルド不要な単一 `index.html` �
     `regen` 命の芽吹き(ヒット時に確率でHP回復)。
   - **弦月ビルド**(アーチャー伝説2のチャージリングビルドを参考に、グレイズを燃料に据えた独自システム。
     4枚とも**単体で成立**し、requires ゲートは使わない。揃うと役割が変わる創発コンボ):
-    `crescent` 弦月の構え(epic。発射間隔 ×2、矢が三日月刃に。`crescentPool` + `updateCrescents()` で
+    `crescent` 弦月の構え(epic。発射サイクル約1秒(`intervalMul` 2.6)、矢が三日月刃に。`crescentPool` + `updateCrescents()` で
     「触れている敵を `tickInterval` ごとに `tickMul` 倍で刻む」研削型。刃は合計 `life` ヒットで砕け、
     **グレイズ成立で全刃の寿命 +1**(上限 `lifeMax`、`onGraze()` 内)。開口部は常に進行方向の逆)/
     `broadhead` 大鏃(rare。単体: 矢の当たり判定 `hitMul` 倍。刃: `crescentScale` 倍に大きく
