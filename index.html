@@ -1846,7 +1846,7 @@ const SKILLS = {
   crescent:  { icon: '🌙', name: '弦月の構え', desc: '発射に約1秒のチャージが要るようになるかわりに、矢が大きな三日月の刃になる。刃は触れている敵を55%で刻み続け、合計8ヒットで砕ける。グレイズするたび飛んでいる刃の寿命+1', max: 1, intervalMul: 2.6, tickMul: 0.55, tickInterval: 0.15, life: 8, lifeMax: 12, pierceLife: 8, speedMul: 0.4, radius: 1.5, flightTime: 4, rarity: 'epic' },
   broadhead: { icon: '🔶', name: '大鏃',       desc: '矢が一回り大きくなり当たりやすくなる。三日月刃はさらに大きく・ゆっくりになり、長く敵に触れる', max: 1, hitMul: 1.4, crescentScale: 1.35, crescentSlow: 0.8, rarity: 'rare' },
   echo_head: { icon: '🔔', name: '残響の鏃',   desc: '矢が当たった敵に0.2秒後、50%のダメージがもう一度響く。三日月刃は刻む速さが2倍になる', max: 1, ratio: 0.5, delay: 0.2, rarity: 'epic' },
-  eclipse:   { icon: '🌑', name: '弾喰いの月', desc: '矢と三日月刃が敵弾に触れるとかき消す。かき消した1発ごとにグレイズが成立する', max: 1, rarity: 'legendary' },
+  eclipse:   { icon: '🌑', name: '月蝕', desc: '矢と三日月刃が敵弾に触れるとかき消す。かき消した1発ごとにグレイズが成立する', max: 1, rarity: 'legendary' },
 
   // --- グレイズビルド「闘気の構え」: チャージを「消費する弾薬」から「維持するオーラ」に変える ---
   // 倍率は 1 + (強化ショット倍率 - 1) × チャージ数/上限。紙一重の妙・弾幕遊戯を取ると
@@ -1875,7 +1875,7 @@ const SKILLS = {
   star_twin:    { icon: '🌠', name: '双つ星',     desc: '星が必ず2発連続で落ちるようになる', max: 1, requires: 'star', rarity: 'legendary' },
   // --- 星ビルド「引力の星」: 吸い込む予兆円で範囲攻撃を「当てにいく」。予兆の近くは敵弾も曲がる危険地帯になる ---
   star_gravity: { icon: '🌀', name: '引力の星',   desc: '星の威力と範囲が1.5倍になり、予兆の円が敵と敵弾を吸い込む。かわりに落下までの溜めが長くなる', max: 1, requires: 'star', dmgMul: 1.5, radiusMul: 1.5, telegraphMul: 1.6, pull: 4.5, bulletPull: 10, rarity: 'epic' },
-  star_bell:    { icon: '🎐', name: '早星の鈴',   desc: '星の溜めが短くなり、すぐに落ちてくる', max: 1, requires: 'star', telegraphMul: 0.6, rarity: 'rare' },
+  star_bell:    { icon: '🎐', name: '呼び星の鈴',   desc: '星の溜めが短くなり、すぐに落ちてくる', max: 1, requires: 'star', telegraphMul: 0.6, rarity: 'rare' },
   star_sea:     { icon: '🌌', name: '星屑の残り火', desc: '星の着弾点に星屑の燃え跡が2秒残り、触れた敵を焼き続ける', max: 1, requires: 'star', duration: 2, tickEvery: 0.4, tickPct: 0.2, radiusMul: 0.8, rarity: 'legendary' },
   star_fire:    { icon: '🔥', name: '炎の星',     desc: '星に炎属性: 当てた敵を燃やして継続ダメージ', max: 1, requires: 'star', rarity: 'rare' },
   star_ice:     { icon: '❄️', name: '氷の星',     desc: '星に氷属性: 当てた敵を短時間凍らせる', max: 1, requires: 'star', rarity: 'rare' },
@@ -1946,7 +1946,7 @@ function recomputeSkillStats() {
     crescent,                         // 弦月の構え(未取得なら null。fireArrow が矢を刃に置き換える)
     arrowHitMul: n('broadhead') > 0 ? SKILLS.broadhead.hitMul : 1,   // 大鏃: 矢の当たり判定倍率
     echo: n('echo_head') > 0 ? SKILLS.echo_head : null,              // 残響の鏃(刃では刻み倍速に変質)
-    eclipse: n('eclipse') > 0,        // 弾喰いの月: 自弾が敵弾をかき消してグレイズ化
+    eclipse: n('eclipse') > 0,        // 月蝕: 自弾が敵弾をかき消してグレイズ化
     speedMul: 1 + SKILLS.boots.value * n('boots'),
     multishot: n('multishot'),      // 正面の追加本数
     pierce: n('pierce'),            // 貫通できる敵の数
@@ -3499,7 +3499,7 @@ function updateProjectiles(dt) {
       b.life -= dt;
       const p = b.mesh.position;
       if (b.life <= 0 || Math.abs(p.x) > h || Math.abs(p.z) > h) { deactivate(b); continue; }
-      // 弾喰いの月: 矢は触れた敵弾をかき消す(グレイズ成立扱い)
+      // 月蝕: 矢は触れた敵弾をかき消す(グレイズ成立扱い)
       if (st.eclipse && pool === arrowPool) eclipseEat(p, 0.35 * st.arrowHitMul);
       // damageEnemy が removeEnemy(splice)を呼ぶので、敵は後ろから回す
       for (let ei = enemies.length - 1; ei >= 0; ei--) {
@@ -3586,7 +3586,7 @@ function updateCrescents(dt) {
     if (!cs || b.life <= 0 || Math.abs(p.x) > h || Math.abs(p.z) > h) { deactivate(b); continue; }
     // 開口部を常に後方へ(自転はさせない: 追尾中も進行方向が読めるように)
     b.mesh.rotation.set(-Math.PI / 2, 0, Math.atan2(b.vel.z, -b.vel.x) - (Math.PI + CRESCENT_ARC / 2));
-    // 弾喰いの月: 刃の全面が敵弾を食う
+    // 月蝕: 刃の全面が敵弾を食う
     if (st.eclipse) eclipseEat(p, cs.radius * b.scaleMul + 0.22);
     b.tickT -= dt;
     if (b.tickT <= 0) {
@@ -3620,7 +3620,7 @@ function updateCrescents(dt) {
   }
 }
 
-// 弾喰いの月: 中心 p・半径 r に入った敵弾をかき消し、1発ごとにグレイズ成立扱いにする
+// 月蝕: 中心 p・半径 r に入った敵弾をかき消し、1発ごとにグレイズ成立扱いにする
 // (チャージ加算・見切りの星・刃の寿命回復まで、通常のグレイズと同じ経路を通る)
 function eclipseEat(p, r) {
   for (const eb of bulletPool) {
