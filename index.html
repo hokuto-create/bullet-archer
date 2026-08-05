@@ -306,7 +306,11 @@
     margin-top: 8px; padding: 8px 10px; min-height: 3.2em;
     background: #0f1524; border-radius: 8px;
     color: #b9c6e2; font-size: 12px; line-height: 1.55;
+    /* パネルが max-height に達したときに潰されて文が切れないように。
+       縮むのはスクロールできるリスト側だけにする */
+    flex: none;
   }
+  #dbg-title, #dbg-close { flex: none; }
   #dbg-desc b { color: #ffd76a; }
   #dbg-close {
     margin-top: 10px; padding: 8px; background: #2a3550; color: #cfe0ff;
