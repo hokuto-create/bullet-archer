@@ -499,9 +499,12 @@ const CONFIG = {
       twinDelay: 0.3, twinOffset: 1.4, // 双つ星(2発目の遅れと着弾のずらし幅)
       color: 0xffc04d,                // 無属性のときの色(属性があれば属性色になる)
     },
-    // 霊剣: ランダムな敵の頭上から剣が落ちて単体ダメージ(落下中は対象を追う)
+    // 霊剣(憑依剣): 対象の斜め上の空間に実体化 → 突きで刺さる。降下はしない(星との差別化)
     sword: {
-      damage: 26, fallTime: 0.22, fallHeight: 9, pool: 14, color: 0xbfe8ff,
+      damage: 26, pool: 14, color: 0xbfe8ff,
+      appearTime: 0.14,               // 実体化(半透明・大きめ → 縮んで固体化)の時間
+      stabTime: 0.09,                 // 出現点から敵の胴への突きの時間
+      appearDist: 2.2, appearHeight: 1.7,   // 出現点のオフセット(対象からの距離と高さ)
     },
     // 守護者: プレイヤーの周りを回るお供。属性ごとに1種で、雷だけ即着弾の落雷を使う
     guardian: {
@@ -1895,14 +1898,14 @@ const SKILLS = {
   star_poison:  { icon: '🧪', name: '毒の星',     desc: '星に毒属性: 当てた敵は倒れるまで毎秒ダメージ', max: 1, requires: 'star', rarity: 'rare' },
 
   // --- 召喚攻撃: 霊剣(単体) ---
-  sword_rain:    { icon: '🗡️', name: '剣の雨',   desc: '5秒ごとに霊剣がランダムな敵へ降る(重ねて4秒→3秒)', max: 3, family: 'sword', intervals: [5, 4, 3], rarity: 'rare' },
-  sword_attack:  { icon: '🗡️', name: '追影の剣', desc: '攻撃時12%の確率で霊剣が敵に降る(重ねて20%→28%)', max: 3, family: 'sword', chances: [0.12, 0.2, 0.28], rarity: 'rare' },
+  sword_rain:    { icon: '🗡️', name: '剣の雨',   desc: '5秒ごとに霊剣が現れ、ランダムな敵に突き刺さる(重ねて4秒→3秒)', max: 3, family: 'sword', intervals: [5, 4, 3], rarity: 'rare' },
+  sword_attack:  { icon: '🗡️', name: '追影の剣', desc: '攻撃時12%の確率で霊剣が敵に突き刺さる(重ねて20%→28%)', max: 3, family: 'sword', chances: [0.12, 0.2, 0.28], rarity: 'rare' },
   sword_revenge: { icon: '🗡️', name: '報復の剣', desc: '被弾すると霊剣3本で反撃する', max: 1, family: 'sword', rarity: 'epic' },
-  sword_double:  { icon: '⚔️', name: '剣嵐',     desc: '一度に降る霊剣が1本増える', max: 2, requires: 'sword', rarity: 'epic' },
-  sword_wave:    { icon: '🌪️', name: '剣気解放', desc: '霊剣の着弾時、周囲の敵にも50%の剣気ダメージ', max: 1, radius: 2.2, ratio: 0.5, requires: 'sword', rarity: 'legendary' },
+  sword_double:  { icon: '⚔️', name: '剣嵐',     desc: '一度に現れる霊剣が1本増える', max: 2, requires: 'sword', rarity: 'epic' },
+  sword_wave:    { icon: '🌪️', name: '剣気解放', desc: '霊剣が突き刺さると、周囲の敵にも50%の剣気ダメージ', max: 1, radius: 2.2, ratio: 0.5, requires: 'sword', rarity: 'legendary' },
   // --- 霊剣ビルド「剣印」: 印を溜めて一斉に弾けさせる処刑コンボ ---
-  sword_oath:    { icon: '⚜️', name: '剣印の誓い', desc: '霊剣のダメージが30%下がるかわりに、斬られた敵へ剣印が残る。印が3つたまると弾け、印1つにつき150%の処刑ダメージ', max: 1, requires: 'sword', dmgMul: 0.7, marks: 3, execRatio: 1.5, rarity: 'epic' },
-  sword_guide:   { icon: '🧭', name: '追い打ちの剣', desc: '霊剣が「最後に自分の攻撃を当てた敵」めがけて降るようになる', max: 1, requires: 'sword', rarity: 'rare' },
+  sword_oath:    { icon: '⚜️', name: '剣印の誓い', desc: '霊剣のダメージが30%下がるかわりに、刺さった剣が敵に残る。3本たまると一斉に弾け、1本につき150%の処刑ダメージ', max: 1, requires: 'sword', dmgMul: 0.7, marks: 3, execRatio: 1.5, rarity: 'epic' },
+  sword_guide:   { icon: '🧭', name: '追い打ちの剣', desc: '霊剣が「最後に自分の攻撃を当てた敵」めがけて現れるようになる', max: 1, requires: 'sword', rarity: 'rare' },
   sword_grave:   { icon: '🪦', name: '剣ノ墓標',   desc: '処刑で敵が倒れるとその場に剣が立ち、周囲へ100%の剣気の衝撃波を放つ', max: 1, requires: 'sword', ratio: 1.0, radius: 2.5, rarity: 'legendary' },
   sword_fire:    { icon: '🔥', name: '炎の霊剣', desc: '霊剣に炎属性: 貫いた敵を燃やして継続ダメージ', max: 1, requires: 'sword', rarity: 'rare' },
   sword_ice:     { icon: '❄️', name: '氷の霊剣', desc: '霊剣に氷属性: 貫いた敵を短時間凍らせる', max: 1, requires: 'sword', rarity: 'rare' },
@@ -2443,24 +2446,24 @@ function updateStarSea(dt) {
   }
 }
 
-// --- 霊剣 ---
-// ランダムな敵の頭上に現れて突き落ちる剣。落下中は対象を追うので必中に近いが、
-// 落下し切る前に対象が倒れたら最後の位置に落ちて不発(演出だけ出す)
+// --- 霊剣(憑依剣)---
+// 対象の斜め上の空間に半透明で実体化し(appear)、縮んで固体化したら胴へ突き刺さる(stab)。
+// 突きの間も対象を追うので必中に近いが、刺さる前に対象が倒れたらスッと消えて不発
 const swordPool = (function () {
   const W = CONFIG.arts.sword;
   const items = [];
   for (let i = 0; i < W.pool; i++) {
     const mesh = new THREE.Mesh(
       new THREE.ConeGeometry(0.16, 1.3, 6),
-      new THREE.MeshBasicMaterial({ color: W.color })
+      new THREE.MeshBasicMaterial({ color: W.color, transparent: true })   // 実体化のフェードで使う
     );
-    mesh.rotation.x = Math.PI;        // 切っ先を下に
     mesh.visible = false;
     scene.add(mesh);
-    items.push({ active: false, t: 0, target: null, x: 0, z: 0, elems: null, mesh });
+    items.push({ active: false, phase: 'appear', t: 0, target: null, ang: 0, elems: null, mesh });
   }
   return items;
 })();
+const _swordDir = new THREE.Vector3();
 
 function castSwords(n) {
   if (enemies.length === 0) return;
@@ -2472,12 +2475,13 @@ function castSwords(n) {
     for (const w of swordPool) {
       if (w.active) continue;
       w.active = true;
+      w.phase = 'appear';
       w.t = 0;
       w.target = target;
-      w.x = target.mesh.position.x;
-      w.z = target.mesh.position.z;
+      w.ang = Math.random() * Math.PI * 2;   // 出現する方角(複数本は自然にばらける)
       w.elems = level.stats.sword.elems;
       w.mesh.material.color.setHex(artColor(w.elems, CONFIG.arts.sword.color));
+      w.mesh.material.opacity = 0;
       w.mesh.visible = true;
       break;
     }
@@ -2489,33 +2493,58 @@ function updateSwords(dt) {
   for (const w of swordPool) {
     if (!w.active) continue;
     w.t += dt;
-    // removeEnemy 済みの敵は hpBar が null になるのでそれで生存を見る
-    if (w.target && w.target.hpBar) {
-      w.x = w.target.mesh.position.x;
-      w.z = w.target.mesh.position.z;
-    }
-    const t = Math.min(w.t / W.fallTime, 1);
-    w.mesh.position.set(w.x, W.fallHeight * (1 - t) + 0.8, w.z);
-    if (t >= 1) {
+    // removeEnemy 済みの敵は hpBar が null になる。刺さる前に倒れたらスッと消えて不発
+    if (!w.target || !w.target.hpBar) {
       w.active = false;
       w.mesh.visible = false;
+      w.target = null;
+      continue;
+    }
+    const tp = w.target.mesh.position;
+    // 出現点は対象の斜め上。対象が動いても相対位置を保つ(突きが必中になる)
+    const ox = tp.x + Math.cos(w.ang) * W.appearDist;
+    const oy = W.appearHeight;
+    const oz = tp.z + Math.sin(w.ang) * W.appearDist;
+    if (w.phase === 'appear') {
+      // 実体化: 半透明・大きめ → 縮みながら固体化。切っ先は常に敵の胴へ
+      const k = Math.min(w.t / W.appearTime, 1);
+      w.mesh.position.set(ox, oy, oz);
+      w.mesh.material.opacity = k;
+      w.mesh.scale.setScalar(1.6 - 0.6 * k);
+      _swordDir.set(tp.x - ox, 0.6 - oy, tp.z - oz).normalize();
+      w.mesh.quaternion.setFromUnitVectors(_axisY, _swordDir);
+      if (k >= 1) {
+        w.phase = 'stab';
+        w.t = 0;
+        spawnFlash(ox, oy, oz, CONFIG.fx.muzzle.size * 0.8, 0xdfefff);   // 固体化の閃き
+      }
+      continue;
+    }
+    // 突き: 出現点から敵の胴へ一直線
+    const k = Math.min(w.t / W.stabTime, 1);
+    const tx = tp.x, ty = 0.6, tz = tp.z;
+    w.mesh.position.set(ox + (tx - ox) * k, oy + (ty - oy) * k, oz + (tz - oz) * k);
+    _swordDir.set(tx - ox, ty - oy, tz - oz).normalize();
+    w.mesh.quaternion.setFromUnitVectors(_axisY, _swordDir);
+    if (k >= 1) {
+      w.active = false;
+      w.mesh.visible = false;
+      w.mesh.scale.setScalar(1);
       const sw = level.stats.sword;
       const splash = sw.splash;
-      spawnGrazeFx(w.x, w.z, splash ? 1.8 : 0.9, artColor(w.elems, W.color));
+      spawnGrazeFx(tx, tz, splash ? 1.8 : 0.9, artColor(w.elems, W.color));
       const dmg = W.damage * level.stats.summonMul * (sw.oath ? sw.oath.dmgMul : 1);   // 剣印の誓いは単発減
-      if (w.target && w.target.hpBar) {
-        applyElems(w.target, dmg, w.elems);
-        if (w.target.hpBar) damageEnemy(w.target, dmg);
-        if (sw.oath && w.target.hpBar) addSwordMark(w.target, w.elems);   // 剣印を積む(処刑もここから)
-      }
+      applyElems(w.target, dmg, w.elems);
+      if (w.target.hpBar) damageEnemy(w.target, dmg);
+      if (sw.oath && w.target.hpBar) addSwordMark(w.target, w.elems);   // 刺さって残る(処刑もここから)
       if (splash) {
-        // 剣気解放: 着弾点の周囲(本命の敵は除く)にも割合ダメージ。対象が倒れた不発でも剣気は出る
+        // 剣気解放: 突き刺さった点の周囲(本命の敵は除く)にも割合ダメージ
         const SW = SKILLS.sword_wave;
         const sdmg = dmg * SW.ratio;
         for (let i = enemies.length - 1; i >= 0; i--) {
           const e = enemies[i];
           if (e === w.target) continue;
-          const dx = e.mesh.position.x - w.x, dz = e.mesh.position.z - w.z;
+          const dx = e.mesh.position.x - tx, dz = e.mesh.position.z - tz;
           const r = SW.radius + e.def.radius;
           if (dx * dx + dz * dz > r * r) continue;
           applyElems(e, sdmg, w.elems);
@@ -2528,26 +2557,39 @@ function updateSwords(dt) {
 }
 
 // --- 剣印の誓い(剣印と処刑)---
-// 剣印は敵の頭上で回る小剣で表す。ジオメトリ・マテリアルは全敵で共有し、
-// メッシュだけ印が付いた敵に遅延生成する(removeEnemy が回収)
-const swordMarkGeo = new THREE.ConeGeometry(0.13, 0.9, 6);
-const swordMarkMat = new THREE.MeshBasicMaterial({ color: 0xbfe8ff, transparent: true, opacity: 0.85 });
+// 剣印は「敵の体に刺さったまま残る小剣」で表す(憑依剣の刺さりがそのまま印になる)。
+// ジオメトリ・マテリアルは全敵で共有し、小剣メッシュだけ印ごとに markGroup へ足す
+// (removeEnemy が回収。共有リソースは dispose しない)
+const swordMarkGeo = new THREE.ConeGeometry(0.09, 0.7, 6);
+const swordMarkMat = new THREE.MeshBasicMaterial({ color: 0xbfe8ff, transparent: true, opacity: 0.9 });
+
+function clearSwordMarks(e) {
+  e.swordMarks = 0;
+  if (e.markGroup) while (e.markGroup.children.length) e.markGroup.remove(e.markGroup.children[0]);
+}
 
 function addSwordMark(e, elems) {
   const oath = level.stats.sword.oath;
   e.swordMarks++;
-  if (!e.markMesh) {
-    e.markMesh = new THREE.Mesh(swordMarkGeo, swordMarkMat);
-    e.markMesh.rotation.x = Math.PI;    // 切っ先を下に
-    scene.add(e.markMesh);
+  if (!e.markGroup) {
+    e.markGroup = new THREE.Group();
+    scene.add(e.markGroup);
   }
+  // 刺さった剣: 本数ごとに方角を変えて、斜め上から胴へ刺さった角度で残す
+  const m = new THREE.Mesh(swordMarkGeo, swordMarkMat);
+  const a = e.swordMarks * 2.4;
+  m.position.set(Math.cos(a) * 0.34, 0.85, Math.sin(a) * 0.34);
+  m.quaternion.setFromUnitVectors(
+    _axisY, _swordDir.set(-Math.cos(a) * 0.55, -0.8, -Math.sin(a) * 0.55).normalize()
+  );
+  e.markGroup.add(m);
   if (e.swordMarks < oath.marks) return;
-  // 処刑: 印1本につき execRatio 倍(単発減とは無関係の素の剣ダメージ基準)
-  e.swordMarks = 0;
+  // 処刑: 刺さった剣が一斉に弾ける。印1本につき execRatio 倍(単発減とは無関係の素の剣ダメージ基準)
+  clearSwordMarks(e);
   const dmg = CONFIG.arts.sword.damage * level.stats.summonMul * oath.execRatio * oath.marks;
   const x = e.mesh.position.x, z = e.mesh.position.z;
-  spawnGrazeFx(x, z, 1.6, 0xdfefff);
-  spawnFlash(x, 1.0, z, CONFIG.fx.muzzle.size * 1.6, 0xdfefff);
+  spawnGrazeFx(x, z, 1.9, 0xdfefff);
+  spawnFlash(x, 1.0, z, CONFIG.fx.muzzle.size * 1.8, 0xdfefff);
   damageEnemy(e, dmg, 'crit');
   // 剣ノ墓標: 処刑でとどめを刺したときだけ、その場に剣が立って衝撃波
   if (level.stats.sword.grave && !e.hpBar) swordGrave(x, z, elems);
@@ -3047,7 +3089,7 @@ function spawnEnemy(typeName, waveNum) {
     freezeT: 0, freezeCd: 0,              // 凍結: 残り時間 / 再凍結までのクールダウン
     poisonTick: 0, poisonDmg: 0,          // 毒: 次のダメージまで / 毎秒のダメージ(0 なら未感染)
     echoT: 0, echoDmg: 0,                 // 残響の鏃: 発動までの残り / 積まれたダメージ
-    swordMarks: 0, markMesh: null,        // 剣印の誓い: 剣印の数 / 頭上の小剣(遅延生成)
+    swordMarks: 0, markGroup: null,       // 剣印の誓い: 刺さった剣の数 / その表示グループ(遅延生成)
     hitFlash: 0, hitSquash: 0,            // 被弾の白フラッシュ / ぷにっと潰れの残り時間
   };
   enemies.push(enemy);
@@ -3057,7 +3099,7 @@ function spawnEnemy(typeName, waveNum) {
 function removeEnemy(enemy) {
   scene.remove(enemy.mesh);
   if (enemy.telegraphRing) scene.remove(enemy.telegraphRing);
-  if (enemy.markMesh) { scene.remove(enemy.markMesh); enemy.markMesh = null; }   // ジオメトリ等は共有なので外すだけ
+  if (enemy.markGroup) { scene.remove(enemy.markGroup); enemy.markGroup = null; }   // ジオメトリ等は共有なので外すだけ
   if (enemy.hpBar) {
     // ジオメトリは共有なのでマテリアルだけ捨てる
     scene.remove(enemy.hpBar.group);
@@ -3161,13 +3203,12 @@ function updateEnemy(enemy, dt) {
   if (enemy.hitFlash > 0) enemy.hitFlash -= dt;
   bodyMat.emissive.setHex(enemy.hitFlash > 0 ? 0xb8b8b8 : frozen ? 0x2255aa : 0x000000);
   // 被弾のぷにっと潰れ: 山なりに横へ膨らみ縦に縮む(当たり判定には影響しない)
-  // 剣印(剣印の誓い): 頭上で回る小剣。数は大きさで伝える
-  if (enemy.markMesh) {
-    enemy.markMesh.visible = enemy.swordMarks > 0;
+  // 剣印(剣印の誓い): 体に刺さったまま残る小剣。敵に付いて動き、ゆっくり回って見える
+  if (enemy.markGroup) {
+    enemy.markGroup.visible = enemy.swordMarks > 0;
     if (enemy.swordMarks > 0) {
-      enemy.markMesh.position.set(pos.x, 2.1, pos.z);
-      enemy.markMesh.rotation.y += dt * 4;
-      enemy.markMesh.scale.setScalar(0.55 + 0.25 * enemy.swordMarks);
+      enemy.markGroup.position.set(pos.x, 0, pos.z);
+      enemy.markGroup.rotation.y += dt * 0.8;
     }
   }
   const sq = CONFIG.fx.hitSquash;
@@ -3800,7 +3841,7 @@ function untakeSkill(id) {
     updateHud();
   }
   if (SKILLS[id].family === 'guardian') syncGuardians();
-  if (id === 'sword_oath') for (const e of enemies) e.swordMarks = 0;   // 印の表示を残さない
+  if (id === 'sword_oath') for (const e of enemies) clearSwordMarks(e);   // 刺さった剣の表示を残さない
   graze.charges = Math.min(graze.charges, grazeChargeCap());   // 闘気の構えを外したら上限3に収める
   updateGrazeHud();
 }
