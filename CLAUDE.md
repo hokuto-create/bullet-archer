@@ -223,6 +223,12 @@ GitHub Pages で公開する前提の、ビルド不要な単一 `index.html` �
   - **霊剣**(単体): 周期 `sword_rain`(段階は `intervals` 配列)/ 攻撃時 `sword_attack` /
     被弾時 `sword_revenge`。ランダムな敵の頭上から落ち、落下中は対象を追う。
     対象が先に倒れたら不発(演出だけ)。`sword_double` 剣嵐で一度の本数+1
+    - **霊剣ビルド「百剣」**: `sword_oath` 百剣の誓い(epic。単発 `dmgMul` 0.7 に減るかわりに
+      ヒットで剣印。`marks` 3 で処刑 = 印1本 `execRatio` 1.5 倍。`addSwordMark()`。
+      印は頭上で回る小剣 `markMesh`(共有ジオメトリ・敵ごと遅延生成、removeEnemy が回収))/
+      `sword_guide` 導きの銘(rare。`arts.lastHit`(矢・刃・守護者弾の最終ヒット先)を優先して狙う)/
+      `sword_grave` 剣ノ墓標(legendary。処刑でとどめを刺すと `swordGrave()` が
+      `ratio` 100% の衝撃波(半径 `radius` 2.5)+ `gravePool` の立つ剣の演出)
   - **守護者**(常時のお供): 属性そのものが生成スキル(対応表は `GUARDIAN_SKILLS`)。
     プレイヤーの周囲を公転し、炎・氷・毒は弾(`orbPool`)、雷だけ即着弾の落雷。
     場のお供は `syncGuardians()` が `level.taken` から作り直す(取得時とリセット時だけ呼ぶ)。
