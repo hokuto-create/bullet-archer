@@ -25,23 +25,13 @@
     padding: calc(10px + env(safe-area-inset-top)) 16px 0;
     pointer-events: none; display: none;
   }
-  #hp-bar-outer {
-    width: min(46vw, 260px); height: 14px;
-    background: rgba(255,255,255,0.15);
-    border: 1px solid rgba(255,255,255,0.4);
-    border-radius: 7px; overflow: hidden;
-  }
-  #hp-bar-inner {
-    width: 100%; height: 100%;
-    background: linear-gradient(90deg, #3f6, #6f9);
-    transition: width 0.15s;
-  }
   #hud-row { display: flex; justify-content: space-between; align-items: flex-start; }
   #hud-right { text-align: right; text-shadow: 0 1px 3px #000; }
   #chapter-label { font-size: 11px; color: #9fc4ff; letter-spacing: 0.08em; }
   #wave-label { font-size: 18px; font-weight: bold; color: #ffd76a; }
   #score-label { font-size: 14px; color: #ccc; }
-  #hp-label { font-size: 11px; color: #cfc; margin-top: 2px; text-shadow: 0 1px 2px #000; }
+  /* HPゲージ本体はキャラの頭上(3D側)に出す。HUD には数値だけ残す */
+  #hp-label { font-size: 11px; color: #cfc; text-shadow: 0 1px 2px #000; }
 
   /* ---- グレイズゲージ(HPバーの下)---- */
   #graze-bar-outer {
@@ -288,7 +278,6 @@
 <div id="hud">
   <div id="hud-row">
     <div>
-      <div id="hp-bar-outer"><div id="hp-bar-inner"></div></div>
       <div id="hp-label">HP 100 / 100</div>
       <div id="graze-bar-outer"><div id="graze-bar-inner"></div></div>
       <div id="graze-label">GRAZE で次の攻撃を強化</div>
@@ -485,6 +474,8 @@ const CONFIG = {
     lagColor: 0xffffff,             // 直前のHPを示す白い帯
     colorHigh: 0x5fe06a, colorMid: 0xf5c53a, colorLow: 0xf1503c,
     midRatio: 0.5, lowRatio: 0.25,  // HP割合がこれ以下になったら mid / low の色にする
+    // プレイヤーの頭上のバー(色・遅れ・縁は敵と共通。top は頭のてっぺんの高さ)
+    player: { width: 1.9, height: 0.17, top: 1.95 },
   },
   // 与ダメージのポップアップ数値(「-12」が敵の頭上に浮かんで消える)
   damageText: {
@@ -1251,6 +1242,7 @@ function resetPlayer() {
   player.moving = false;
   player.aiming = false;
   Object.assign(player.anim, { run: 0, runW: 0, aim: 0, draw: 0, drawGoal: 0, release: 0, idle: 0 });
+  playerHpBar.lagRatio = 1;
   resetDust();
   updatePlayerAnimation(0);
 }
@@ -2522,25 +2514,50 @@ function makeHpBar(def, isBoss) {
 const camUpDot = Math.hypot(camOffset.x, camOffset.z) / camOffset.length();
 const hpBarUp = new THREE.Vector3();   // カメラの真上方向(ワールド)。毎フレームの new を避ける
 
-function updateHpBar(enemy, dt) {
+function updateHpBarBoard(bar, ratio, anchor, dt) {
   const C = CONFIG.hpBar;
-  const bar = enemy.hpBar;
-  const ratio = clamp(enemy.hp / enemy.maxHp, 0, 1);
 
   // 削れた分は白い帯が少し遅れて追いつく(指数減衰なのでフレームレート非依存)
   if (bar.lagRatio < ratio) bar.lagRatio = ratio;
   else if (C.lagSmoothing > 0) bar.lagRatio += (ratio - bar.lagRatio) * (1 - Math.exp(-dt / C.lagSmoothing));
   else bar.lagRatio = ratio;
 
-  // 敵の足元からカメラの上方向へ逃がす(ワールドの上方向だと見下ろし角で潰れて頭に重なる)
+  // 足元からカメラの上方向へ逃がす(ワールドの上方向だと見下ろし角で潰れて頭に重なる)
   hpBarUp.set(0, 1, 0).applyQuaternion(camera.quaternion);
-  bar.group.position.copy(enemy.mesh.position).addScaledVector(hpBarUp, bar.up);
+  bar.group.position.copy(anchor).addScaledVector(hpBarUp, bar.up);
   bar.group.quaternion.copy(camera.quaternion);   // カメラ正面を向く板にする
   bar.fill.scale.x = bar.w * ratio;
   bar.lag.scale.x = bar.w * bar.lagRatio;
   bar.fill.material.color.setHex(
     ratio <= C.lowRatio ? C.colorLow : ratio <= C.midRatio ? C.colorMid : C.colorHigh
   );
+}
+
+function updateHpBar(enemy, dt) {
+  updateHpBarBoard(enemy.hpBar, clamp(enemy.hp / enemy.maxHp, 0, 1), enemy.mesh.position, dt);
+}
+
+// --- プレイヤーHPバー(敵HPバーの部品・色を共用してキャラのすぐ上に出す)---
+const playerHpBar = (() => {
+  const C = CONFIG.hpBar, P = C.player;
+  const group = new THREE.Group();
+  const bg = makeHpBarPart(hpBarBgGeo, C.bgColor, C.bgOpacity, 10);
+  bg.scale.set(P.width + C.border * 2, P.height + C.border * 2, 1);
+  const lag = makeHpBarPart(hpBarFillGeo, C.lagColor, 0.55, 11);
+  const fill = makeHpBarPart(hpBarFillGeo, C.colorHigh, 1, 12);
+  lag.position.x = fill.position.x = -P.width / 2;
+  lag.scale.set(P.width, P.height, 1);
+  fill.scale.set(P.width, P.height, 1);
+  group.add(bg, lag, fill);
+  group.visible = false;              // タイトル中は隠す(表示は updatePlayerHpBar が握る)
+  scene.add(group);
+  return { group, lag, fill, w: P.width, up: P.top * camUpDot + C.margin, lagRatio: 1 };
+})();
+
+function updatePlayerHpBar(dt) {
+  playerHpBar.group.visible = state.phase !== 'title' && state.phase !== 'gameover';
+  if (!playerHpBar.group.visible) return;
+  updateHpBarBoard(playerHpBar, clamp(player.hp / player.maxHp, 0, 1), player.mesh.position, dt);
 }
 
 function buildEnemyMesh(def, isBoss) {
@@ -3127,6 +3144,7 @@ function animate() {
     updateDust(dt);
   }
   updateCamera(dt);
+  updatePlayerHpBar(dt);
   renderer.render(scene, camera);
 }
 
@@ -3134,7 +3152,6 @@ function animate() {
 // UI同期・画面遷移
 // =====================================================================
 const hudEl = document.getElementById('hud');
-const hpBar = document.getElementById('hp-bar-inner');
 const hpLabel = document.getElementById('hp-label');
 const grazeBar = document.getElementById('graze-bar-inner');
 const grazeLabel = document.getElementById('graze-label');
@@ -3182,11 +3199,6 @@ function renderChapterSelect() {
 }
 
 function updateHud() {
-  const ratio = Math.max(0, player.hp / player.maxHp);
-  hpBar.style.width = (ratio * 100) + '%';
-  hpBar.style.background = ratio > 0.35
-    ? 'linear-gradient(90deg, #3f6, #6f9)'
-    : 'linear-gradient(90deg, #f43, #f86)';
   hpLabel.textContent = 'HP ' + Math.ceil(player.hp) + ' / ' + player.maxHp;
   chapterLabel.textContent = chapterDef().name;
   // チャプター中は残りが分かるように「/ 最終ウェーブ」を出す(エンドレスでは番号だけ)
