@@ -301,6 +301,13 @@
     font-size: 13px; line-height: 1; cursor: pointer;
   }
   .dbg-minus:disabled { opacity: .25; cursor: default; }
+  .dbg-row, .dbg-row * { user-select: none; -webkit-user-select: none; }
+  #dbg-desc {
+    margin-top: 8px; padding: 8px 10px; min-height: 3.2em;
+    background: #0f1524; border-radius: 8px;
+    color: #b9c6e2; font-size: 12px; line-height: 1.55;
+  }
+  #dbg-desc b { color: #ffd76a; }
   #dbg-close {
     margin-top: 10px; padding: 8px; background: #2a3550; color: #cfe0ff;
     border: 1px solid #4a5a80; border-radius: 8px; cursor: pointer;
@@ -347,6 +354,7 @@
   <div id="dbg-box">
     <div id="dbg-title">🛠 スキル自由取得(テスト用・キー K で開閉)</div>
     <div id="dbg-list"></div>
+    <div id="dbg-desc">行を長押し(PCはマウスを乗せる)でスキルの説明が出ます</div>
     <button id="dbg-close">閉じる</button>
   </div>
 </div>
@@ -3811,9 +3819,48 @@ function closeDbgPanel() {
 
 document.getElementById('dbg-skill-btn').addEventListener('click', openDbgPanel);
 document.getElementById('dbg-close').addEventListener('click', closeDbgPanel);
+// 説明の表示: PC はホバー、タッチは長押し(長押しした場合は直後のクリックで取得しない)
+const dbgDesc = document.getElementById('dbg-desc');
+function showDbgDesc(id) {
+  const s = SKILLS[id];
+  dbgDesc.innerHTML = '<b>' + s.icon + ' ' + s.name + '</b>(' +
+    CONFIG.level.rarity[s.rarity].label + ')<br>' + s.desc;
+}
+let dbgPressTimer = null;
+let dbgSuppressClick = false;
+let dbgPressX = 0, dbgPressY = 0;
+function clearDbgPress() {
+  if (dbgPressTimer) { clearTimeout(dbgPressTimer); dbgPressTimer = null; }
+}
+dbgList.addEventListener('pointerdown', (ev) => {
+  const row = ev.target.closest('.dbg-row');
+  if (!row) return;
+  dbgPressX = ev.clientX;
+  dbgPressY = ev.clientY;
+  clearDbgPress();
+  dbgPressTimer = setTimeout(() => {
+    dbgPressTimer = null;
+    dbgSuppressClick = true;        // 長押し = 説明を見たいだけ。取得はしない
+    showDbgDesc(row.dataset.id);
+  }, 450);
+});
+dbgList.addEventListener('pointermove', (ev) => {
+  // 指を滑らせた(リストのスクロール)ときは長押し扱いにしない
+  if (dbgPressTimer && Math.hypot(ev.clientX - dbgPressX, ev.clientY - dbgPressY) > 8) clearDbgPress();
+});
+dbgList.addEventListener('pointerup', clearDbgPress);
+dbgList.addEventListener('pointercancel', clearDbgPress);
+dbgList.addEventListener('mouseover', (ev) => {
+  const row = ev.target.closest('.dbg-row');
+  if (row) showDbgDesc(row.dataset.id);
+});
+dbgList.addEventListener('contextmenu', (ev) => ev.preventDefault());   // 長押しメニュー抑止
+
 dbgList.addEventListener('click', (ev) => {
   const row = ev.target.closest('.dbg-row');
   if (!row) return;
+  if (dbgSuppressClick) { dbgSuppressClick = false; return; }
+  showDbgDesc(row.dataset.id);                    // 取得と同時に説明も更新
   if (ev.target.closest('.dbg-minus')) {          // −ボタン: レベルダウン
     untakeSkill(row.dataset.id);
   } else {                                        // 行本体: レベルアップ
