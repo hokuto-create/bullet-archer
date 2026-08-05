@@ -192,7 +192,7 @@ GitHub Pages で公開する前提の、ビルド不要な単一 `index.html` �
     `broadhead` 大鏃(rare。単体: 矢の当たり判定 `hitMul` 倍。刃: `crescentScale` 倍に大きく
     `crescentSlow` 倍に遅く)/ `echo_head` 残響の鏃(epic。単体: 矢のヒット 0.2 秒後に 50% を
     もう一度 = 敵側の `echoT`/`echoDmg` に積んで `updateEnemy()` が鳴らす。刃: 刻み間隔が半分)/
-    `eclipse` 弾喰いの月(legendary。矢・刃が敵弾に触れると `eclipseEat()` でかき消し、1発ごとに `onGraze()`
+    `eclipse` 月蝕(legendary。矢・刃が敵弾に触れると `eclipseEat()` でかき消し、1発ごとに `onGraze()`
     = チャージ・見切りの星・刃の寿命回復まで通常グレイズと同じ経路)。
     既存スキルの役割変化: `pierce` は刃では寿命 +`pierceLife`(8)/Lv(グレイズ回復の上限も同じだけ伸びる)、
     `homing` は刃が敵に張り付く追尾、
@@ -219,11 +219,11 @@ GitHub Pages で公開する前提の、ビルド不要な単一 `index.html` �
     `star_twin` 双つ星(legendary)で必ず2連。確率の段階は各スキルの `chances` 配列に持つ
     - **星ビルド「引力の星」**: `star_gravity` 引力の星(epic。威力・範囲1.5倍+予兆円が敵と敵弾を吸い込む
       `applyStarGravity()`。敵弾は速さを変えず向きだけ曲げる。かわりに予兆 `telegraphMul` 1.6倍)/
-      `star_bell` 早星の鈴(rare。予兆 0.6倍。引力の星と両取りでほぼ元の速さ)/
+      `star_bell` 呼び星の鈴(rare。予兆 0.6倍。引力の星と両取りでほぼ元の速さ)/
       `star_sea` 星屑の残り火(legendary。着弾点に `starSeaPool` の燃え跡が `duration` 秒残り
       `tickPct` を刻む。`updateStarSea()`)。
       **見切りの星は counter-battery**: グレイズした弾の撃ち主へ星を返す(敵弾の `owner` を
-      `fireEnemyAttack()` で記録し、`onGraze(src)` → `onGrazeArts(src)` に流す。レーザー・弾喰いの月の
+      `fireEnemyAttack()` で記録し、`onGraze(src)` → `onGrazeArts(src)` に流す。レーザー・月蝕の
       かき消しも撃ち主を渡す)。実効半径は `starRadius()` に集約
   - **霊剣**(単体): 周期 `sword_rain`(段階は `intervals` 配列)/ 攻撃時 `sword_attack` /
     被弾時 `sword_revenge`。ランダムな敵の頭上から落ち、落下中は対象を追う。
