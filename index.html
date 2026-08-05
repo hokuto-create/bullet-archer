@@ -3945,6 +3945,7 @@ function renderDbgSkillList() {
 }
 
 // --- 火力表タブ: 現在の取得状況の実効値を CONFIG / level.stats から逆算して表示 ---
+// 未取得の攻撃手段・スキルも「未取得」ラベル+参考値で全部並べる(バランス調整の見取り図)。
 // ゲーム側の計算式(fireArrow / firePlayerShot / starImpact / updateGuardians など)を
 // 変えたらここも追従させること。あくまで開発時の見積もり表で、ゲーム挙動には影響しない
 function renderDbgPower() {
@@ -3953,155 +3954,207 @@ function renderDbgPower() {
   const A = CONFIG.arts;
   const fmt = (v) => String(Math.round(v * 100) / 100);
   const pct = (v) => Math.round(v * 100) + '%';
+  const NA = '<span style="color:#5a6788">未取得</span>';
   const row = (k, v, note) => '<tr><td class="t-k">' + k + '</td><td class="t-v">' + v +
     '</td><td class="t-note">' + (note || '') + '</td></tr>';
   const sec = (t, rows) => '<div class="dbg-sec">' + t + '</div><table class="dbg-table">' + rows + '</table>';
   const ELEM_JP = { fire: '炎', ice: '氷', thunder: '雷', poison: '毒' };
 
-  // 矢 / 三日月刃(通常攻撃)
   const dmg = C.arrowDamage * st.damageMul;
-  const interval = C.fireInterval / st.fireMul;
+  const interval = C.fireInterval / st.fireMul;   // 実際の発射間隔(獅子・弦月の延長込み)
   const front = 1 + st.multishot;
   const arrows = front + (st.back ? 1 : 0) + (st.side ? 2 : 0);
   const gMul = grazeShotMul();
-  let mainDps;                      // 概算合計に使う通常攻撃のDPS
+  const cr = SKILLS.crescent;       // 刃のパラメータは未取得でも参考値の表示に使う
+  const crTaken = !!st.crescent;
+  let mainDps = 0;                  // 概算合計に使う通常攻撃のDPS(矢か刃の実際に動いている方)
+  let summonDps = 0;                // 周期・攻撃時トリガー・守護者ぶんの期待DPS合計
   let html = '';
-  if (!st.crescent) {
+
+  // 矢(弦月取得中は「外した場合の参考値」として出す)
+  {
+    const aInterval = crTaken ? interval / cr.intervalMul : interval;
     const echoMul = st.echo ? 1 + st.echo.ratio : 1;
     const volley = dmg * arrows * echoMul;
-    mainDps = volley / interval;
+    const dps = volley / aInterval;
+    if (!crTaken) mainDps = dps;
     let r = row('攻撃力 / 本', fmt(dmg), '基礎 ' + C.arrowDamage + ' × 攻撃倍率 ' + fmt(st.damageMul));
-    r += row('発射間隔', fmt(interval) + ' 秒', '基礎 ' + C.fireInterval + ' ÷ 速度倍率 ' + fmt(st.fireMul));
+    r += row('発射間隔', fmt(aInterval) + ' 秒', '基礎 ' + C.fireInterval + ' 秒 ÷ 速度倍率');
     r += row('本数 / 斉射', arrows + ' 本', '正面' + front + (st.side ? ' + 両翼2' : '') + (st.back ? ' + 背面1' : ''));
-    if (st.pierce) r += row('貫通', '+' + st.pierce + ' 体', '1本が最大 ' + (1 + st.pierce) + ' 体に当たる');
-    if (st.echo) r += row('残響の鏃', '×' + fmt(echoMul), 'ヒット' + st.echo.delay + '秒後に' + pct(st.echo.ratio) + 'が再ヒット(実効倍率)');
+    r += row('貫通', st.pierce ? '+' + st.pierce + ' 体' : '—',
+      st.pierce ? '1本が最大 ' + (1 + st.pierce) + ' 体に当たる' : NA);
+    r += row('残響の鏃', st.echo ? '×' + fmt(echoMul) : '—',
+      st.echo ? 'ヒット' + st.echo.delay + '秒後に' + pct(st.echo.ratio) + 'が再ヒット(実効倍率)'
+        : NA + '(取得で実効 ×' + (1 + SKILLS.echo_head.ratio) + ')');
     r += row('斉射合計', fmt(volley), '全弾命中時');
-    r += row('DPS', fmt(mainDps), '斉射合計 ÷ 発射間隔');
-    if (st.lion) r += row('至近DPS(獅子)', fmt(mainDps * st.lion.nearMul), st.lion.nearDist + ' 以内で ×' + st.lion.nearMul);
-    html += sec('🏹 矢(通常攻撃)', r);
-  } else {
-    const cr = st.crescent;
+    r += row('DPS', fmt(dps), '斉射合計 ÷ 発射間隔');
+    r += row('至近DPS(獅子)', st.lion ? fmt(dps * st.lion.nearMul) : '—',
+      st.lion ? st.lion.nearDist + ' 以内で ×' + st.lion.nearMul
+        : NA + '(至近 ×' + SKILLS.lion_stance.nearMul + ' / 間隔 ×' + SKILLS.lion_stance.intervalMul + ')');
+    html += sec('🏹 矢(通常攻撃)' + (crTaken ? ' — 三日月刃に置換中(参考値)' : ''), r);
+  }
+
+  // 三日月刃(未取得でも「取得した場合の参考値」を出す)
+  {
+    const cInterval = crTaken ? interval : interval * cr.intervalMul;
     const tick = dmg * cr.tickMul;
     const tickInt = cr.tickInterval / (st.echo ? 2 : 1);
     const life = cr.life + cr.pierceLife * st.pierce;
-    mainDps = tick / tickInt;
+    const dps = tick / tickInt;
+    if (crTaken) mainDps = dps;
     let r = row('刻みダメージ', fmt(tick), '矢の攻撃力 ' + fmt(dmg) + ' × ' + pct(cr.tickMul));
     r += row('刻み間隔', fmt(tickInt) + ' 秒', st.echo ? '残響の鏃で半分' : '');
     r += row('刃の寿命', life + ' ヒット', 'グレイズで+1(上限 ' + (cr.lifeMax + cr.pierceLife * st.pierce) + ')' +
       (st.pierce ? '。射抜きの極意で +' + cr.pierceLife * st.pierce : ''));
     r += row('1刃の総ダメージ', fmt(tick * life), '刻み × 寿命');
-    r += row('発射間隔 / 枚数', fmt(interval) + ' 秒 / ' + arrows + ' 枚', '');
-    r += row('対単体DPS', fmt(mainDps), '1枚が触れ続けた場合');
-    html += sec('🌙 三日月刃(弦月の構え)', r);
+    r += row('発射間隔 / 枚数', fmt(cInterval) + ' 秒 / ' + arrows + ' 枚', '');
+    r += row('対単体DPS', fmt(dps), '1枚が触れ続けた場合');
+    r += row('大鏃(刃)', st.arrowHitMul > 1 ? '×' + SKILLS.broadhead.crescentScale : '—',
+      st.arrowHitMul > 1 ? '刃 ×' + SKILLS.broadhead.crescentScale + '・速度 ×' + SKILLS.broadhead.crescentSlow
+        : NA + '(刃 ×' + SKILLS.broadhead.crescentScale + ')');
+    html += sec('🌙 三日月刃(弦月の構え)' + (crTaken ? '' : ' — ' + NA + '(参考値)'), r);
   }
 
   // 倍率・グレイズ
   {
     let r = row('強化ショット倍率', '×' + fmt(gMul),
       st.zanshin ? '闘気の構え: チャージ満タン時' : 'チャージ1消費で次の斉射に適用');
-    if (st.zanshin) r += row('闘気の構え(現在)', '×' + fmt(zanshinMul()), 'チャージ ' + graze.charges + ' / ' + grazeChargeCap());
-    if (st.lion) r += row('獅子の間合い', '×' + st.lion.nearMul + ' 〜 ×' + st.lion.farMul,
-      st.lion.nearDist + ' 以内 〜 ' + st.lion.farDist + ' 以遠(線形減衰)');
+    r += row('闘気の構え(現在)', st.zanshin ? '×' + fmt(zanshinMul()) : '—',
+      st.zanshin ? 'チャージ ' + graze.charges + ' / ' + grazeChargeCap()
+        : NA + '(取得で非消費・上限 ' + SKILLS.zanshin.chargeCap + ' のオーラ化)');
+    r += row('獅子の間合い', st.lion ? '×' + st.lion.nearMul + ' 〜 ×' + st.lion.farMul : '—',
+      st.lion ? st.lion.nearDist + ' 以内 〜 ' + st.lion.farDist + ' 以遠(線形減衰)'
+        : NA + '(×' + SKILLS.lion_stance.nearMul + ' 〜 ×' + SKILLS.lion_stance.farMul + ')');
     r += row('グレイズ判定半径', fmt(CONFIG.graze.outerRadius * st.grazeRange),
-      st.grazeRange > 1 ? '弾幕遊戯 ×' + st.grazeRange : '');
+      st.grazeRange > 1 ? '弾幕遊戯 ×' + st.grazeRange : '基礎 ' + CONFIG.graze.outerRadius);
+    r += row('月蝕', st.eclipse ? '有効' : '—',
+      st.eclipse ? '自弾が敵弾をかき消してグレイズ化' : NA);
     html += sec('✨ 倍率・グレイズ', r);
   }
 
-  // 召喚攻撃(取っているものだけ出す)
-  let summonDps = 0;                // 攻撃時トリガーと周期・守護者ぶんの期待DPS合計
-  const starOn = st.star.onAttack > 0 || st.star.onKill > 0 || st.star.onGraze;
-  if (starOn) {
-    const sDmg = A.star.damage * st.summonMul * (st.star.gravity ? st.star.gravity.dmgMul : 1);
+  // 星(範囲)
+  {
+    const gravity = st.star.gravity;
+    const sDmg = A.star.damage * st.summonMul * (gravity ? gravity.dmgMul : 1);
     const perDrop = sDmg * (st.star.twin ? 2 : 1);
     let r = row('威力 / 発', fmt(sDmg), '基礎 ' + A.star.damage + ' × 召喚倍率 ' + fmt(st.summonMul) +
-      (st.star.gravity ? ' × 引力 ' + st.star.gravity.dmgMul : ''));
+      (gravity ? ' × 引力 ' + gravity.dmgMul : ''));
     r += row('半径', fmt(starRadius()), '');
-    r += row('予兆時間', fmt(A.star.telegraph * st.star.telegraphMul) + ' 秒', '');
-    if (st.star.twin) r += row('双つ星', '2連', '1トリガーで計 ' + fmt(perDrop));
+    r += row('予兆時間', fmt(A.star.telegraph * st.star.telegraphMul) + ' 秒', '基礎 ' + A.star.telegraph + ' 秒');
     if (st.star.onAttack > 0) {
       const dps = st.star.onAttack * perDrop / interval;
       summonDps += dps;
-      r += row('攻撃時トリガー', pct(st.star.onAttack), '期待DPS ' + fmt(dps));
+      r += row('追撃の星(攻撃時)', pct(st.star.onAttack), '期待DPS ' + fmt(dps));
+    } else {
+      r += row('追撃の星(攻撃時)', '—', NA + '(' + SKILLS.star_attack.chances.map(pct).join('→') + ')');
     }
-    if (st.star.onKill > 0) r += row('撃破時トリガー', pct(st.star.onKill), '');
-    if (st.star.onGraze) r += row('グレイズ時', '100%', '弾の撃ち主へ落ちる');
-    if (st.star.sea) r += row('星屑の残り火', pct(st.star.sea.tickPct) + ' / ' + st.star.sea.tickEvery + '秒',
-      st.star.sea.duration + '秒間(星の威力比)');
+    r += row('弔いの星(撃破時)', st.star.onKill > 0 ? pct(st.star.onKill) : '—',
+      st.star.onKill > 0 ? '' : NA + '(' + SKILLS.star_kill.chances.map(pct).join('→') + ')');
+    r += row('見切りの星(グレイズ時)', st.star.onGraze ? '100%' : '—',
+      st.star.onGraze ? '弾の撃ち主へ落ちる' : NA);
+    r += row('双つ星', st.star.twin ? '2連' : '—',
+      st.star.twin ? '1トリガーで計 ' + fmt(perDrop) : NA);
+    r += row('引力の星', gravity ? '×' + gravity.dmgMul : '—',
+      gravity ? '威力・範囲 ×' + gravity.dmgMul + '、予兆円が敵と敵弾を吸い込む'
+        : NA + '(威力・範囲 ×' + SKILLS.star_gravity.dmgMul + ')');
+    r += row('呼び星の鈴', level.taken.star_bell ? '予兆 ×' + SKILLS.star_bell.telegraphMul : '—',
+      level.taken.star_bell ? '' : NA + '(予兆 ×' + SKILLS.star_bell.telegraphMul + ')');
+    r += row('星屑の残り火', st.star.sea ? pct(st.star.sea.tickPct) + ' / ' + st.star.sea.tickEvery + '秒' : '—',
+      st.star.sea ? st.star.sea.duration + '秒間(星の威力比)'
+        : NA + '(' + pct(SKILLS.star_sea.tickPct) + ' / ' + SKILLS.star_sea.tickEvery + '秒 × ' + SKILLS.star_sea.duration + '秒)');
     html += sec('☄️ 星(範囲)', r);
   }
-  const swordOn = st.sword.interval > 0 || st.sword.onAttack > 0 || st.sword.revenge;
-  if (swordOn) {
+
+  // 霊剣(単体)
+  {
     const wDmg = A.sword.damage * st.summonMul * (st.sword.oath ? st.sword.oath.dmgMul : 1);
     let r = row('威力 / 本', fmt(wDmg), '基礎 ' + A.sword.damage + ' × 召喚倍率 ' + fmt(st.summonMul) +
       (st.sword.oath ? ' × 剣印 ' + st.sword.oath.dmgMul : ''));
-    r += row('本数 / 回', st.sword.count + ' 本', '');
+    r += row('本数 / 回', st.sword.count + ' 本', st.sword.count > 1 ? '剣嵐 +' + (st.sword.count - 1) : '');
     if (st.sword.interval > 0) {
       const dps = wDmg * st.sword.count / st.sword.interval;
       summonDps += dps;
-      r += row('周期(剣の雨)', fmt(st.sword.interval) + ' 秒', '期待DPS ' + fmt(dps));
+      r += row('剣の雨(周期)', fmt(st.sword.interval) + ' 秒', '期待DPS ' + fmt(dps));
+    } else {
+      r += row('剣の雨(周期)', '—', NA + '(' + SKILLS.sword_rain.intervals.join('秒→') + '秒)');
     }
     if (st.sword.onAttack > 0) {
       const dps = st.sword.onAttack * wDmg * st.sword.count / interval;
       summonDps += dps;
-      r += row('攻撃時トリガー', pct(st.sword.onAttack), '期待DPS ' + fmt(dps));
+      r += row('追影の剣(攻撃時)', pct(st.sword.onAttack), '期待DPS ' + fmt(dps));
+    } else {
+      r += row('追影の剣(攻撃時)', '—', NA + '(' + SKILLS.sword_attack.chances.map(pct).join('→') + ')');
     }
-    if (st.sword.revenge) r += row('報復の剣', '被弾時 3 本', '');
-    if (st.sword.splash) r += row('剣気解放', pct(SKILLS.sword_wave.ratio), '半径 ' + SKILLS.sword_wave.radius + ' に割合ダメージ');
-    if (st.sword.oath) r += row('処刑(剣印 ' + st.sword.oath.marks + ' 本)',
-      fmt(wDmg * st.sword.oath.execRatio * st.sword.oath.marks),
-      '1本 ' + pct(st.sword.oath.execRatio) + ' × ' + st.sword.oath.marks + ' 本');
-    if (st.sword.grave) r += row('剣ノ墓標', pct(st.sword.grave.ratio), '半径 ' + st.sword.grave.radius + ' の衝撃波');
+    r += row('報復の剣', st.sword.revenge ? '被弾時 3 本' : '—', st.sword.revenge ? '' : NA);
+    r += row('剣気解放', st.sword.splash ? pct(SKILLS.sword_wave.ratio) : '—',
+      st.sword.splash ? '半径 ' + SKILLS.sword_wave.radius + ' に割合ダメージ'
+        : NA + '(' + pct(SKILLS.sword_wave.ratio) + ' / 半径 ' + SKILLS.sword_wave.radius + ')');
+    r += row('処刑(剣印 ' + SKILLS.sword_oath.marks + ' 本)',
+      st.sword.oath ? fmt(wDmg * st.sword.oath.execRatio * st.sword.oath.marks) : '—',
+      st.sword.oath ? '1本 ' + pct(st.sword.oath.execRatio) + ' × ' + st.sword.oath.marks + ' 本'
+        : NA + '(1本 ' + pct(SKILLS.sword_oath.execRatio) + ')');
+    r += row('追い打ちの剣', st.sword.guide ? '有効' : '—',
+      st.sword.guide ? '最後に攻撃を当てた敵を狙う' : NA);
+    r += row('剣ノ墓標', st.sword.grave ? pct(st.sword.grave.ratio) : '—',
+      st.sword.grave ? '半径 ' + st.sword.grave.radius + ' の衝撃波'
+        : NA + '(' + pct(SKILLS.sword_grave.ratio) + ' / 半径 ' + SKILLS.sword_grave.radius + ')');
     html += sec('🗡️ 霊剣(単体)', r);
   }
-  const G = A.guardian;
-  const guardians = ['fire', 'ice', 'thunder', 'poison']
-    .map((el) => ({ el, lv: level.taken['guard_' + el] || 0 })).filter((g) => g.lv > 0);
-  if (guardians.length) {
+
+  // 守護者(4属性とも出す。未取得は Lv1 相当の参考値)
+  {
+    const G = A.guardian;
+    const takenEls = [];
     let r = '';
-    for (const g of guardians) {
-      const lv2 = g.lv >= 2;
+    for (const el of ['fire', 'ice', 'thunder', 'poison']) {
+      const lv = level.taken['guard_' + el] || 0;
+      if (lv > 0) takenEls.push(el);
+      const lv2 = lv >= 2;
       const rate = st.guardianRate / (lv2 ? G.lv2IntervalMul : 1);
       const dm = st.summonMul * (lv2 ? G.lv2DamageMul : 1);
-      const bolt = g.el === 'thunder';
+      const bolt = el === 'thunder';
       const base = bolt ? G.boltDamage : G.orbDamage;
       const iv = (bolt ? G.boltInterval : G.orbInterval) / rate;
       const per = base * dm * (bolt && st.guardBeast ? SKILLS.guard_beast.bolts : 1);
       const dps = per / iv;
-      summonDps += dps;
-      r += row(ELEM_JP[g.el] + 'の守護者 Lv' + g.lv, fmt(base * dm) + ' / ' + fmt(iv) + '秒',
-        'DPS ' + fmt(dps) + (bolt && st.guardBeast ? '(落雷 ' + SKILLS.guard_beast.bolts + ' 連)' : ''));
+      if (lv > 0) summonDps += dps;
+      r += row(ELEM_JP[el] + 'の守護者' + (lv > 0 ? ' Lv' + lv : ''),
+        fmt(base * dm) + ' / ' + fmt(iv) + '秒',
+        (lv > 0 ? '' : NA + '。') + 'DPS ' + fmt(dps) +
+        (bolt && st.guardBeast ? '(落雷 ' + SKILLS.guard_beast.bolts + ' 連)' : ''));
     }
-    if (st.guardFrenzy) r += row('野生解放', '狂化中 ×' + st.guardFrenzy.rateMul + ' / 平時 ÷' + st.guardFrenzy.slowMul,
-      '上の値は狂化倍率なしの数値');
+    r += row('聖獣化', st.guardBeast ? '有効' : '—',
+      st.guardBeast ? '弾が巨大化・貫通、落雷 ' + SKILLS.guard_beast.bolts + ' 連'
+        : NA + '(貫通・落雷 ' + SKILLS.guard_beast.bolts + ' 連)');
+    r += row('野生解放', st.guardFrenzy ? '狂化中 ×' + st.guardFrenzy.rateMul + ' / 平時 ÷' + st.guardFrenzy.slowMul : '—',
+      st.guardFrenzy ? '上の値は狂化倍率なしの数値'
+        : NA + '(狂化中 ×' + SKILLS.guard_frenzy.rateMul + ' / 平時 ÷' + SKILLS.guard_frenzy.slowMul + ')');
+    r += row('早駆けの蹄', st.guardOrbitMul > 1 ? '公転 ×' + st.guardOrbitMul : '—',
+      st.guardOrbitMul > 1 ? '' : NA + '(公転 ×' + SKILLS.guard_gallop.orbitMul + ')');
     html += sec('🐲 守護者(常時)', r);
   }
 
-  // 属性(付いているファミリーだけ出す)
-  const elemFams = [];
-  if (st.arrowElems.length) elemFams.push(['矢', st.arrowElems]);
-  if (starOn && st.star.elems.length) elemFams.push(['星', st.star.elems]);
-  if (swordOn && st.sword.elems.length) elemFams.push(['霊剣', st.sword.elems]);
-  if (guardians.length) elemFams.push(['守護者', guardians.map((g) => g.el)]);
-  if (elemFams.length) {
+  // 属性(4属性の効果と、ファミリーごとの付与状況を全部出す)
+  {
     const E = A.elements;
-    const note = {
-      fire: '燃焼 ' + pct(E.fire.tickPct) + '/' + E.fire.tickEvery + '秒 × ' + E.fire.duration +
-        '秒(計 ' + pct(E.fire.tickPct * E.fire.duration / E.fire.tickEvery) + ')',
-      ice: '凍結 ' + E.ice.freeze + '秒(再凍結まで ' + E.ice.cooldown + '秒)',
-      thunder: '連鎖 ' + pct(E.thunder.pct) + '(半径 ' + E.thunder.radius + ')',
-      poison: '毒 ' + pct(E.poison.tickPct) + '/秒(倒れるまで)',
-    };
-    let r = '';
-    for (const [name, elems] of elemFams) {
-      r += row(name, elems.map((e) => ELEM_JP[e]).join('・'), elems.map((e) => note[e]).join(' / '));
-    }
+    let r = row('炎(燃焼)', pct(E.fire.tickPct) + ' / ' + E.fire.tickEvery + '秒',
+      E.fire.duration + '秒間(計 ' + pct(E.fire.tickPct * E.fire.duration / E.fire.tickEvery) + ')');
+    r += row('氷(凍結)', E.ice.freeze + ' 秒', '再凍結まで ' + E.ice.cooldown + ' 秒');
+    r += row('雷(連鎖)', pct(E.thunder.pct), '半径 ' + E.thunder.radius + '(連鎖は無属性)');
+    r += row('毒(スリップ)', pct(E.poison.tickPct) + ' / 秒', '倒れるまで続く');
+    const fam = (name, elems) => row(name + 'への付与',
+      elems.length ? elems.map((e) => ELEM_JP[e]).join('・') : 'なし', '');
+    r += fam('矢', st.arrowElems);
+    r += fam('星', st.star.elems);
+    r += fam('霊剣', st.sword.elems);
+    r += fam('守護者', ['fire', 'ice', 'thunder', 'poison'].filter((el) => (level.taken['guard_' + el] || 0) > 0));
     html += sec('🔥 属性(当てた攻撃の基礎ダメージ比)', r);
   }
 
   // サマリー
   {
     let r = row('概算DPS合計', fmt(mainDps + summonDps),
-      (st.crescent ? '刃1枚の対単体DPS' : '矢DPS') + ' + 召喚の期待DPS(強化ショット・撃破/被弾トリガー除く)');
+      (crTaken ? '刃1枚の対単体DPS' : '矢DPS') + ' + 召喚の期待DPS(強化ショット・撃破/被弾トリガー除く)');
     r += row('最大HP', player.maxHp, '');
     r += row('移動速度', fmt(C.speed * st.speedMul), '基礎 ' + C.speed + ' × ' + fmt(st.speedMul));
     r += row('召喚ダメージ倍率', '×' + fmt(st.summonMul), '');
