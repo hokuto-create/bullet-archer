@@ -519,7 +519,7 @@ const CONFIG = {
     visibleRadius: 10,              // プレイヤー中心のこの半径が必ず画面内に収まるよう画角を自動調整
     distance: 70,                   // カメラを置く距離。near/far に収めるためだけの値
   },
-  pool: { arrows: 40, bullets: 300 },
+  pool: { arrows: 40, bullets: 300, crescents: 24 },
 };
 
 // =====================================================================
@@ -1300,6 +1300,33 @@ const bulletPool = makePool(CONFIG.pool.bullets, () =>
   )
 );
 
+// 三日月刃(弦月の構え)。矢の置き換えだが「触れている間、一定間隔で刻む」独自の
+// 当たり方をするため playerShotPools には入れず updateCrescents() で回す。
+// ジオメトリは全刃で共有し、寿命でグローの明るさを変えるためマテリアルだけ刃ごとに持つ
+const CRESCENT_ARC = Math.PI * 1.35;          // 3/4 欠けの月
+const crescentGeos = {
+  glow: new THREE.TorusGeometry(0.55, 0.16, 10, 40, CRESCENT_ARC),
+  core: new THREE.TorusGeometry(0.55, 0.075, 10, 40, CRESCENT_ARC),
+  film: new THREE.CircleGeometry(0.5, 40),    // 内側の薄い膜(研削の「場」を感じさせる)
+};
+const crescentPool = makePool(CONFIG.pool.crescents, () => {
+  const g = new THREE.Group();
+  const glowMat = new THREE.MeshBasicMaterial({
+    color: 0xffd76a, transparent: true, opacity: 0.35,
+    blending: THREE.AdditiveBlending, depthWrite: false,
+  });
+  const coreMat = new THREE.MeshBasicMaterial({ color: 0xffedb0 });
+  const filmMat = new THREE.MeshBasicMaterial({
+    color: 0xffe9a8, transparent: true, opacity: 0.12,
+    blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide,
+  });
+  g.add(new THREE.Mesh(crescentGeos.glow, glowMat));
+  g.add(new THREE.Mesh(crescentGeos.core, coreMat));
+  g.add(new THREE.Mesh(crescentGeos.film, filmMat));
+  g.userData = { glowMat, coreMat };          // 更新時に触るのはこの2枚だけ
+  return g;
+});
+
 function spawnFromPool(pool, pos, dir, speed, damage) {
   for (const b of pool) {
     if (b.active) continue;
@@ -1594,6 +1621,15 @@ function onGraze() {
   const p = player.mesh.position;
   spawnGrazeFx(p.x, p.z, 1, 0xffffff);
   onGrazeArts();                    // 見切りの星(グレイズ成立トリガー)
+  // 弦月の構え: グレイズが飛んでいる刃の寿命を回復する(弾幕の濃さが刃の燃料になる)
+  const cs = level.stats.crescent;
+  if (cs) {
+    for (const b of crescentPool) {
+      if (!b.active) continue;
+      if (b.grind < cs.lifeMax) b.grind++;
+      b.flash = 1;
+    }
+  }
   updateGrazeHud();
 }
 
@@ -1740,6 +1776,14 @@ const SKILLS = {
   // 倍率は狙った敵との距離で決まり、nearDist 以内で nearMul、farDist 以遠は farMul まで線形減衰。
   // 遠距離の実DPSは素の弓を下回る(farMul / intervalMul < 1)ので、取ったら近接ビルドを強制する
   lion_stance:{ icon: '🦁', name: '獅子の間合い', desc: '発射間隔が2倍に延びるかわりに、敵に近づくほど矢が強くなる(至近で4倍、遠いと1.3倍まで落ちる)', max: 1, intervalMul: 2.0, nearMul: 4.0, farMul: 1.3, nearDist: 4, farDist: 12, rarity: 'legendary' },
+
+  // --- 弦月ビルド: 全員が単体で成立し、弦月の構えと揃うと役割が変わる(創発コンボ)。requires ゲートは使わない ---
+  // 弦月の構え: 矢が研削の三日月刃になる。刃の寿命(合計ヒット数)はグレイズで回復する = 弾幕の濃さが燃料。
+  // 射抜きの極意は刃では「寿命 +pierceLife/Lv」に変質し、隼の瞳は刃が敵に張り付く追尾になる
+  crescent:  { icon: '🌙', name: '弦月の構え', desc: '発射間隔が2倍に延びるかわりに、矢がゆっくり進む三日月の刃になる。刃は触れている敵を55%で刻み続け、合計8ヒットで砕ける。グレイズするたび飛んでいる刃の寿命+1', max: 1, intervalMul: 2.0, tickMul: 0.55, tickInterval: 0.15, life: 8, lifeMax: 12, pierceLife: 4, speedMul: 0.4, radius: 0.75, flightTime: 4, rarity: 'epic' },
+  broadhead: { icon: '🔶', name: '大鏃',       desc: '矢が一回り大きくなり当たりやすくなる。三日月刃はさらに大きく・ゆっくりになり、長く敵に触れる', max: 1, hitMul: 1.4, crescentScale: 1.35, crescentSlow: 0.8, rarity: 'rare' },
+  echo_head: { icon: '🔔', name: '残響の鏃',   desc: '矢が当たった敵に0.2秒後、40%のダメージがもう一度響く。三日月刃は刻む速さが2倍になる', max: 1, ratio: 0.4, delay: 0.2, rarity: 'epic' },
+  eclipse:   { icon: '🌑', name: '月蝕',       desc: '矢と三日月刃が敵弾に触れるとかき消す。かき消した1発ごとにグレイズが成立する', max: 1, rarity: 'legendary' },
   graze_dance:{ icon: '💫', name: '弾幕遊戯',    desc: 'グレイズ判定の範囲が1.5倍に広がり、強化ショットの倍率 +50%', max: 1, rangeMul: 1.5, bonus: 0.5, rarity: 'legendary' },
   back:      { icon: '🔄', name: '背中の目',     desc: '後方にも矢を放つ', max: 1, rarity: 'rare' },
   side:      { icon: '↔️', name: '両翼の構え',   desc: '左右にも矢を放つ', max: 1, rarity: 'rare' },
@@ -1812,10 +1856,16 @@ function recomputeSkillStats() {
   // 獅子の間合い: 発射間隔のデメリットは fireMul を割る形で焼き込む
   // (発射サイクル由来の弓の構えモーションも自動で遅くなる)
   const lion = n('lion_stance') > 0 ? SKILLS.lion_stance : null;
+  const crescent = n('crescent') > 0 ? SKILLS.crescent : null;   // 弦月の構えも発射間隔を倍にする
   level.stats = {
     damageMul: (1 + SKILLS.power.value * n('power') + SKILLS.mighty.value * n('mighty')) * allMul,
-    fireMul: (1 + SKILLS.rapid.value * n('rapid') + SKILLS.flurry.value * n('flurry')) / (lion ? lion.intervalMul : 1),
+    fireMul: (1 + SKILLS.rapid.value * n('rapid') + SKILLS.flurry.value * n('flurry'))
+      / (lion ? lion.intervalMul : 1) / (crescent ? crescent.intervalMul : 1),
     lion,                             // 獅子の間合い(未取得なら null。距離倍率は firePlayerShot が読む)
+    crescent,                         // 弦月の構え(未取得なら null。fireArrow が矢を刃に置き換える)
+    arrowHitMul: n('broadhead') > 0 ? SKILLS.broadhead.hitMul : 1,   // 大鏃: 矢の当たり判定倍率
+    echo: n('echo_head') > 0 ? SKILLS.echo_head : null,              // 残響の鏃(刃では刻み倍速に変質)
+    eclipse: n('eclipse') > 0,        // 月蝕: 自弾が敵弾をかき消してグレイズ化
     speedMul: 1 + SKILLS.boots.value * n('boots'),
     multishot: n('multishot'),      // 正面の追加本数
     pierce: n('pierce'),            // 貫通できる敵の数
@@ -1908,13 +1958,39 @@ const _arrowDir = new THREE.Vector3();
 function fireArrow(origin, dir, angle, speed, baseDamage, mul) {
   _arrowDir.copy(dir);
   if (angle) _arrowDir.applyAxisAngle(_axisY, angle);
+  // 弦月の構え: 矢のかわりに三日月刃を放つ(攻撃力・強化倍率は同じ経路で乗る)
+  if (level.stats.crescent) {
+    return fireCrescent(origin, _arrowDir, baseDamage * level.stats.damageMul * (mul || 1), (mul || 1) >= 2);
+  }
   const b = spawnFromPool(arrowPool, origin, _arrowDir, speed, baseDamage * level.stats.damageMul * (mul || 1));
   if (b) {
     b.pierce = level.stats.pierce;
     b.elems = level.stats.arrowElems;   // 矢のエレメント(命中時に applyElems が読む)
+    b.mesh.scale.setScalar(level.stats.arrowHitMul);   // 大鏃: 見た目も太る(判定は updateProjectiles 側)
     // 数字を金色・大きめに出す閾値。グレイズ強化は素で2倍からなので従来どおり全部拾い、
     // 獅子の間合いはボーナス域(2倍以上)だけ金にする(遠距離の1.3倍は白のまま)
     b.crit = (mul || 1) >= 2;
+  }
+  return b;
+}
+
+// 三日月刃を1枚放つ。damage は damageMul・強化倍率込みの値。
+// 射抜きの極意は刃では「貫通」のかわりに寿命 +pierceLife/Lv として効く
+function fireCrescent(origin, dir, damage, crit) {
+  const cs = level.stats.crescent;
+  const bh = (level.taken.broadhead || 0) > 0 ? SKILLS.broadhead : null;   // 大鏃: 大きく・遅く
+  const b = spawnFromPool(crescentPool, origin, dir,
+    CONFIG.player.arrowSpeed * cs.speedMul * (bh ? bh.crescentSlow : 1), damage);
+  if (b) {
+    b.life = cs.flightTime;
+    b.elems = level.stats.arrowElems;
+    b.crit = crit;
+    b.grind = cs.life + level.stats.pierce * cs.pierceLife;   // 残り寿命(合計ヒット数)
+    b.tickT = 0;
+    b.flash = 0;                      // グレイズ回復の白い瞬き
+    b.scaleMul = bh ? bh.crescentScale : 1;
+    b.mesh.scale.setScalar(b.scaleMul);
+    b.mesh.position.y = 0.6;
   }
   return b;
 }
@@ -2660,6 +2736,7 @@ function spawnEnemy(typeName, waveNum) {
     burnT: 0, burnTick: 0, burnDmg: 0,    // 燃焼: 残り時間 / 次のダメージまで / 1回分のダメージ
     freezeT: 0, freezeCd: 0,              // 凍結: 残り時間 / 再凍結までのクールダウン
     poisonTick: 0, poisonDmg: 0,          // 毒: 次のダメージまで / 毎秒のダメージ(0 なら未感染)
+    echoT: 0, echoDmg: 0,                 // 残響の鏃: 発動までの残り / 積まれたダメージ
     hitFlash: 0, hitSquash: 0,            // 被弾の白フラッシュ / ぷにっと潰れの残り時間
   };
   enemies.push(enemy);
@@ -2749,6 +2826,16 @@ function updateEnemy(enemy, dt) {
       enemy.poisonTick = 0;
       damageEnemy(enemy, enemy.poisonDmg, 'dot');
       if (!enemy.hpBar) return;           // 毒で倒れた
+    }
+  }
+  // 残響の鏃: 矢のヒットの一拍あと、積んだ分をまとめて響かせる
+  if (enemy.echoDmg > 0) {
+    enemy.echoT -= dt;
+    if (enemy.echoT <= 0) {
+      const d = enemy.echoDmg;
+      enemy.echoDmg = 0;
+      damageEnemy(enemy, d, 'dot');
+      if (!enemy.hpBar) return;           // 残響で倒れた
     }
   }
   const frozen = enemy.freezeT > 0;
@@ -3089,20 +3176,23 @@ function steerArrow(b, dt) {
 }
 
 function updateProjectiles(dt) {
+  const st = level.stats;
   const h = CONFIG.arena.half + 3;
   // プレイヤーの矢・守護者の弾 → 敵
   for (const pool of playerShotPools) {
     for (const b of pool) {
       if (!b.active) continue;
-      if (level.stats.homing && pool === arrowPool && enemies.length > 0) steerArrow(b, dt);
+      if (st.homing && pool === arrowPool && enemies.length > 0) steerArrow(b, dt);
       b.mesh.position.addScaledVector(b.vel, dt);
       b.life -= dt;
       const p = b.mesh.position;
       if (b.life <= 0 || Math.abs(p.x) > h || Math.abs(p.z) > h) { deactivate(b); continue; }
+      // 月蝕: 矢は触れた敵弾をかき消す(グレイズ成立扱い)
+      if (st.eclipse && pool === arrowPool) eclipseEat(p, 0.35 * st.arrowHitMul);
       // damageEnemy が removeEnemy(splice)を呼ぶので、敵は後ろから回す
       for (let ei = enemies.length - 1; ei >= 0; ei--) {
         const e = enemies[ei];
-        const r = e.def.radius + 0.25;
+        const r = e.def.radius + 0.25 * (pool === arrowPool ? st.arrowHitMul : 1);   // 大鏃で太る
         if (p.distanceToSquared(e.mesh.position.clone().setY(p.y)) >= r * r) continue;
         if (b.hits && b.hits.has(e)) continue;   // 貫通した敵に次のフレームで多重ヒットしない
         // 属性を先に付与する(とどめの一撃でも雷の連鎖は起きる)。
@@ -3110,6 +3200,11 @@ function updateProjectiles(dt) {
         // 巻き添えで敵配列が縮むことはあるので damageEnemy 側の生存確認に hpBar を使う
         applyElems(e, b.damage, b.elems);
         if (e.hpBar) damageEnemy(e, b.damage, b.crit ? 'crit' : undefined);
+        // 残響の鏃: 矢のヒットは一拍おいてもう一度響く(敵側に積んで updateEnemy が鳴らす)
+        if (st.echo && pool === arrowPool && e.hpBar) {
+          e.echoT = st.echo.delay;
+          e.echoDmg += b.damage * st.echo.ratio;
+        }
         // 命の芽吹き: ヒットするたび確率でHP回復(矢・守護者の弾どちらでも発動)
         if (level.stats.regenChance > 0 && player.hp < player.maxHp && Math.random() < level.stats.regenChance) {
           player.hp = Math.min(player.maxHp, player.hp + SKILLS.regen.value);
@@ -3154,6 +3249,68 @@ function updateProjectiles(dt) {
   }
 }
 
+// --- 三日月刃(弦月の構え)の更新 ---
+// 矢と違い「触れている間、tickInterval ごとに刻む」ので一撃判定のループには乗せない。
+// 1回の刻みで重なっている敵全員にヒットし、1体につき寿命(grind)を1消費。尽きたら砕ける
+function updateCrescents(dt) {
+  const st = level.stats;
+  const cs = st.crescent;
+  const h = CONFIG.arena.half + 3;
+  for (const b of crescentPool) {
+    if (!b.active) continue;
+    if (st.homing && enemies.length > 0) steerArrow(b, dt);   // 隼の瞳: 刃が敵に張り付く
+    b.mesh.position.addScaledVector(b.vel, dt);
+    b.life -= dt;
+    const p = b.mesh.position;
+    if (!cs || b.life <= 0 || Math.abs(p.x) > h || Math.abs(p.z) > h) { deactivate(b); continue; }
+    // 開口部を常に後方へ(自転はさせない: 追尾中も進行方向が読めるように)
+    b.mesh.rotation.set(-Math.PI / 2, 0, Math.atan2(b.vel.z, -b.vel.x) - (Math.PI + CRESCENT_ARC / 2));
+    // 月蝕: 刃の全面が敵弾を食う
+    if (st.eclipse) eclipseEat(p, cs.radius * b.scaleMul + 0.22);
+    b.tickT -= dt;
+    if (b.tickT <= 0) {
+      b.tickT = cs.tickInterval * (st.echo ? 0.5 : 1);        // 残響の鏃: 刻みが倍速に変質
+      const r = cs.radius * b.scaleMul;
+      for (let ei = enemies.length - 1; ei >= 0 && b.grind > 0; ei--) {
+        const e = enemies[ei];
+        const rr = r + e.def.radius;
+        const dx = e.mesh.position.x - p.x, dz = e.mesh.position.z - p.z;
+        if (dx * dx + dz * dz >= rr * rr) continue;
+        applyElems(e, b.damage * cs.tickMul, b.elems);
+        if (e.hpBar) damageEnemy(e, b.damage * cs.tickMul, b.crit ? 'crit' : 'dot');
+        if (st.regenChance > 0 && player.hp < player.maxHp && Math.random() < st.regenChance) {
+          player.hp = Math.min(player.maxHp, player.hp + SKILLS.regen.value);
+          updateHud();
+        }
+        b.grind--;
+      }
+      if (b.grind <= 0) {             // 寿命切れ: 砕ける
+        spawnFlash(p.x, 0.6, p.z, CONFIG.fx.muzzle.size * 1.3, 0xffedb0);
+        deactivate(b);
+        continue;
+      }
+    }
+    // 寿命が減るほどグローが暗くなり、グレイズで回復した瞬間は白く瞬く
+    if (b.flash > 0) b.flash = Math.max(0, b.flash - dt * 5);
+    const u = b.mesh.userData;
+    u.glowMat.opacity = 0.12 + 0.3 * clamp(b.grind / cs.lifeMax, 0, 1) + 0.5 * b.flash;
+    u.coreMat.color.setHex(b.flash > 0.05 ? 0xffffff : 0xffedb0);
+  }
+}
+
+// 月蝕: 中心 p・半径 r に入った敵弾をかき消し、1発ごとにグレイズ成立扱いにする
+// (チャージ加算・見切りの星・刃の寿命回復まで、通常のグレイズと同じ経路を通る)
+function eclipseEat(p, r) {
+  for (const eb of bulletPool) {
+    if (!eb.active) continue;
+    const dx = eb.mesh.position.x - p.x, dz = eb.mesh.position.z - p.z;
+    if (dx * dx + dz * dz >= r * r) continue;
+    spawnFlash(eb.mesh.position.x, 0.5, eb.mesh.position.z, CONFIG.fx.muzzle.size * 0.7, 0xcfe8ff);
+    deactivate(eb);
+    onGraze();
+  }
+}
+
 // プレイヤーに対して固定オフセットを保つ。followSmoothing が 0 なら遅れなしの完全追従で、
 // 画面の流れが入力と 1:1 になる(遅れて滑り込む動きは酔いの原因になるため既定は 0)
 function updateCamera(dt) {
@@ -3181,6 +3338,7 @@ function animate() {
     updatePlayer(dt);
     for (let i = enemies.length - 1; i >= 0; i--) updateEnemy(enemies[i], dt);
     updateProjectiles(dt);
+    updateCrescents(dt);
     updateArts(dt);
     updateGrazeFx(dt);
     updateFx(dt);
@@ -3427,6 +3585,7 @@ function startGame(chapterIndex) {
   applyChapterVisual(chapterDef());
   while (enemies.length) removeEnemy(enemies[0]);
   clearPool(arrowPool);
+  clearPool(crescentPool);
   clearPool(bulletPool);
   resetPlayer();
   state.score = 0;
@@ -3467,6 +3626,7 @@ function chapterClear() {
   const bonus = ch.clearBonus + hp * ch.hpBonus;
   state.score += bonus;
   clearPool(arrowPool);
+  clearPool(crescentPool);
   clearPool(bulletPool);
   clearArtsFx();                     // 落下中の星・霊剣も掃除(守護者は「このまま続ける」用に残す)
   resetDamageTexts();                // 'clear' 中は animate() が止まるので消し残りを掃除する
@@ -3497,6 +3657,7 @@ function continueEndless() {
 function goTitle() {
   while (enemies.length) removeEnemy(enemies[0]);
   clearPool(arrowPool);
+  clearPool(crescentPool);
   clearPool(bulletPool);
   clearArtsFx();
   resetFx();

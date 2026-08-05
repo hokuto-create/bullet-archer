@@ -179,6 +179,19 @@ GitHub Pages で公開する前提の、ビルド不要な単一 `index.html` �
     `pierce` 射抜きの極意(`b.pierce` と `b.hits` の Set で多重ヒット防止)/
     `back` 背中の目 / `side` 両翼の構え / `grazeup` 紙一重の妙 /
     `regen` 命の芽吹き(ヒット時に確率でHP回復)。
+  - **弦月ビルド**(アーチャー伝説2のチャージリングビルドを参考に、グレイズを燃料に据えた独自システム。
+    4枚とも**単体で成立**し、requires ゲートは使わない。揃うと役割が変わる創発コンボ):
+    `crescent` 弦月の構え(epic。発射間隔 ×2、矢が三日月刃に。`crescentPool` + `updateCrescents()` で
+    「触れている敵を `tickInterval` ごとに `tickMul` 倍で刻む」研削型。刃は合計 `life` ヒットで砕け、
+    **グレイズ成立で全刃の寿命 +1**(上限 `lifeMax`、`onGraze()` 内)。開口部は常に進行方向の逆)/
+    `broadhead` 大鏃(rare。単体: 矢の当たり判定 `hitMul` 倍。刃: `crescentScale` 倍に大きく
+    `crescentSlow` 倍に遅く)/ `echo_head` 残響の鏃(epic。単体: 矢のヒット 0.2 秒後に 40% を
+    もう一度 = 敵側の `echoT`/`echoDmg` に積んで `updateEnemy()` が鳴らす。刃: 刻み間隔が半分)/
+    `eclipse` 月蝕(legendary。矢・刃が敵弾に触れると `eclipseEat()` でかき消し、1発ごとに `onGraze()`
+    = チャージ・見切りの星・刃の寿命回復まで通常グレイズと同じ経路)。
+    既存スキルの役割変化: `pierce` は刃では寿命 +`pierceLife`/Lv、`homing` は刃が敵に張り付く追尾、
+    乱れ撃ち/両翼/背中の目は近距離で複数の刃が1体に重なる(収束による近距離優位)。
+    刃の挙動数値はすべて `SKILLS.crescent` 系エントリのフィールドに持つ。
     **ステータス強化はコモン +10% とレア +20% の2段構成**(`mighty` 破軍の剛弓 / `flurry` 神速の指、
     召喚側は `summon_mastery` 召喚の真髄 / `guard_oath` 守護者の誓い が各コモン版の上位)。
     さらに `warlord` 軍神の加護(epic)は矢と召喚の両方に**乗算**で +20%(`recomputeSkillStats()` の
