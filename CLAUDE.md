@@ -212,6 +212,14 @@ GitHub Pages で公開する前提の、ビルド不要な単一 `index.html` �
   - **星**(範囲): 生成トリガーは3スキル(攻撃時確率 `star_attack` / 撃破時確率 `star_kill` /
     グレイズ時 `star_graze`)。金色の予兆円 → 火球落下 → `starImpact()` が範囲に `damageEnemy()`。
     `star_twin` 双つ星(legendary)で必ず2連。確率の段階は各スキルの `chances` 配列に持つ
+    - **星ビルド「天墜」**: `star_gravity` 天墜の座(epic。威力・範囲1.5倍+予兆円が敵と敵弾を吸い込む
+      `applyStarGravity()`。敵弾は速さを変えず向きだけ曲げる。かわりに予兆 `telegraphMul` 1.6倍)/
+      `star_bell` 呼び星の鈴(rare。予兆 0.6倍。天墜と両取りでほぼ元の速さ)/
+      `star_sea` 星海(legendary。着弾点に `starSeaPool` の燃え跡が `duration` 秒残り
+      `tickPct` を刻む。`updateStarSea()`)。
+      **見切りの星は counter-battery**: グレイズした弾の撃ち主へ星を返す(敵弾の `owner` を
+      `fireEnemyAttack()` で記録し、`onGraze(src)` → `onGrazeArts(src)` に流す。レーザー・月蝕の
+      かき消しも撃ち主を渡す)。実効半径は `starRadius()` に集約
   - **霊剣**(単体): 周期 `sword_rain`(段階は `intervals` 配列)/ 攻撃時 `sword_attack` /
     被弾時 `sword_revenge`。ランダムな敵の頭上から落ち、落下中は対象を追う。
     対象が先に倒れたら不発(演出だけ)。`sword_double` 剣嵐で一度の本数+1
