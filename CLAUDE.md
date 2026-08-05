@@ -151,7 +151,12 @@ GitHub Pages で公開する前提の、ビルド不要な単一 `index.html` �
     (legendary は攻撃手段ごとに1枚: `star_twin` 双つ星 / `homing` 隼の瞳(矢が追尾。
     `steerArrow()` が最寄りの敵へ旋回)/ `sword_wave` 剣気解放(霊剣の着弾に50%の範囲ダメージ)/
     `guard_beast` 聖獣化(守護者の弾が巨大化+貫通、落雷2連)/ `graze_dance` 弾幕遊戯
-    (グレイズ判定半径 ×1.5 = `level.stats.grazeRange`、強化ショット倍率 +0.5 = `grazeFlat`)。
+    (グレイズ判定半径 ×1.5 = `level.stats.grazeRange`、強化ショット倍率 +0.5 = `grazeFlat`)/
+    `lion_stance` 獅子の間合い(発射間隔 ×2 のかわりに距離で矢の倍率が変わる: `nearDist` 以内で
+    `nearMul` = 4倍、`farDist` 以遠は `farMul` = 1.3倍まで線形減衰。遠距離の実DPSは素より下がる
+    ハイリスク近接ビルド。間隔は `fireMul` を割って焼き込み、距離倍率は `firePlayerShot()` が
+    最寄りの敵から計算してグレイズ倍率に乗算。`nearDist` はオレンジのリングで常時表示し、
+    ダメージ数字・発射閃光の金色は「倍率2以上」で判定)。
     挙動系の調整値は各 SKILLS エントリのフィールドに持つ)。
     段の候補が3未満のとき(エピック以上・終盤の取り切り)は**ある分だけ**提示し、
     `#skill-cards` の列数と幅をインラインで枚数に合わせる。キー選択(1/2/3)は
