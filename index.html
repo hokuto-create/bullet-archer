@@ -316,6 +316,25 @@
     margin-top: 10px; padding: 8px; background: #2a3550; color: #cfe0ff;
     border: 1px solid #4a5a80; border-radius: 8px; cursor: pointer;
   }
+  /* 開発画面のタブ(スキル取得 / スキル一覧 / 火力表) */
+  #dbg-tabbar { display: flex; gap: 6px; margin-bottom: 10px; flex: none; }
+  .dbg-tab-btn {
+    flex: 1; padding: 6px; font-size: 12px; cursor: pointer;
+    background: #1b2338; color: #8fa2c8; border: 1px solid #3a4a70; border-radius: 8px;
+  }
+  .dbg-tab-btn.active { background: #2a3550; color: #ffd76a; border-color: #b09040; }
+  .dbg-tab { min-height: 0; display: flex; flex-direction: column; }
+  #dbg-tab-list, #dbg-tab-power { display: block; overflow-y: auto; }
+  .dbg-sec { color: #ffd76a; font-weight: bold; font-size: 12px; margin: 10px 0 4px; }
+  .dbg-tab .dbg-sec:first-child { margin-top: 0; }
+  .dbg-note { color: #8fa2c8; font-size: 11px; line-height: 1.5; margin-bottom: 6px; }
+  .dbg-table { width: 100%; border-collapse: collapse; font-size: 12px; color: #e8eefc; }
+  .dbg-table td { padding: 3px 6px; border-bottom: 1px solid #232c46; vertical-align: top; }
+  .dbg-table td.t-k { color: #cfe0ff; white-space: nowrap; }
+  .dbg-table td.t-v { text-align: right; white-space: nowrap; color: #fff; font-weight: bold; }
+  .dbg-table td.t-note { color: #8fa2c8; }
+  .dbg-table td.t-sm { white-space: nowrap; color: #8fa2c8; }
+  .dbg-table td.t-desc { color: #b9c6e2; line-height: 1.5; }
 </style>
 </head>
 <body>
@@ -334,8 +353,8 @@
       <div id="chapter-label">CHAPTER 1</div>
       <div id="wave-label">WAVE 1</div>
       <div id="score-label">SCORE 0</div>
-      <!-- [DEBUG] スキル自由取得ボタン(使用感テスト用。リリース時に削除) -->
-      <button id="dbg-skill-btn">🛠 スキル</button>
+      <!-- [DEBUG] 開発画面ボタン(使用感テスト用。リリース時に削除) -->
+      <button id="dbg-skill-btn">🛠 開発</button>
     </div>
   </div>
 </div>
@@ -353,12 +372,21 @@
   <div id="skill-cards"></div>
 </div>
 
-<!-- ===== [DEBUG] スキル自由取得パネル(使用感テスト用。リリース時にこのブロックと対応CSS/JSを削除) ===== -->
+<!-- ===== [DEBUG] 開発画面パネル(使用感テスト用。リリース時にこのブロックと対応CSS/JSを削除) ===== -->
 <div id="dbg-panel">
   <div id="dbg-box">
-    <div id="dbg-title">🛠 スキル自由取得(テスト用・キー K で開閉)</div>
-    <div id="dbg-list"></div>
-    <div id="dbg-desc">行を長押し(PCはマウスを乗せる)でスキルの説明が出ます</div>
+    <div id="dbg-title">🛠 開発画面(テスト用・キー K で開閉)</div>
+    <div id="dbg-tabbar">
+      <button class="dbg-tab-btn active" data-tab="get">スキル取得</button>
+      <button class="dbg-tab-btn" data-tab="list">スキル一覧</button>
+      <button class="dbg-tab-btn" data-tab="power">火力表</button>
+    </div>
+    <div class="dbg-tab" id="dbg-tab-get">
+      <div id="dbg-list"></div>
+      <div id="dbg-desc">行を長押し(PCはマウスを乗せる)でスキルの説明が出ます</div>
+    </div>
+    <div class="dbg-tab" id="dbg-tab-list" style="display:none"></div>
+    <div class="dbg-tab" id="dbg-tab-power" style="display:none"></div>
     <button id="dbg-close">閉じる</button>
   </div>
 </div>
@@ -3805,10 +3833,12 @@ function updateGrazeHud() {
   }
 }
 
-// ===== [DEBUG] スキル自由取得(使用感テスト用。リリース時にこのセクションを丸ごと削除) =====
-// プレイ中に 🛠ボタン or キー K でパネルを開き、任意のスキルを取得できる。
-// requires ゲートも無視する(生成スキルなしの属性など、死に取得も試せる)。
-// 開いている間はレベルアップと同じポーズ扱いで、ウェーブクリアは waveQueued に退避される
+// ===== [DEBUG] 開発画面(使用感テスト用。リリース時にこのセクションを丸ごと削除) =====
+// プレイ中(またはタイトル)に 🛠ボタン or キー K でパネルを開く。タブは3つ:
+// - スキル取得: 任意のスキルを取得/レベルダウンできる(requires ゲートも無視)
+// - スキル一覧: 全スキルをレアリティ別に説明つきで一覧する(バランス調整の見取り図)
+// - 火力表: 現在の取得状況から実効ダメージ・間隔・DPSを CONFIG / level.stats から逆算して表示
+// プレイ中に開いている間はレベルアップと同じポーズ扱いで、ウェーブクリアは waveQueued に退避される
 const dbgPanel = document.getElementById('dbg-panel');
 const dbgList = document.getElementById('dbg-list');
 
@@ -3846,20 +3876,239 @@ function untakeSkill(id) {
   updateGrazeHud();
 }
 
+let dbgPaused = false;              // このパネルがポーズさせたかどうか(タイトルから開いたときは触らない)
 function openDbgPanel() {
-  if (state.phase !== 'playing') return;
-  state.phase = 'levelup';          // ポーズ。ウェーブクリアの setTimeout は waveQueued に積まれる
-  renderDbgPanel();
+  if (state.phase === 'playing') {
+    state.phase = 'levelup';        // ポーズ。ウェーブクリアの setTimeout は waveQueued に積まれる
+    dbgPaused = true;
+  } else if (state.phase !== 'title') {
+    return;                         // タイトルからは一覧・火力表の閲覧用に開ける
+  }
+  renderDbgActiveTab();
   dbgPanel.style.display = 'flex';
 }
 
 function closeDbgPanel() {
   if (dbgPanel.style.display === 'none' || !dbgPanel.style.display) return;
   dbgPanel.style.display = 'none';
-  if (state.phase === 'levelup') {
+  if (dbgPaused) {
+    dbgPaused = false;
     state.phase = 'playing';
     if (state.waveQueued) { state.waveQueued = false; advanceWave(); }
   }
+}
+
+// --- タブ切り替え ---
+const dbgTabEls = {
+  get: document.getElementById('dbg-tab-get'),
+  list: document.getElementById('dbg-tab-list'),
+  power: document.getElementById('dbg-tab-power'),
+};
+let dbgActiveTab = 'get';
+function renderDbgActiveTab() {
+  if (dbgActiveTab === 'list') renderDbgSkillList();
+  else if (dbgActiveTab === 'power') renderDbgPower();
+  else renderDbgPanel();
+}
+document.querySelectorAll('.dbg-tab-btn').forEach((btn) => {
+  btn.addEventListener('click', () => {
+    dbgActiveTab = btn.dataset.tab;
+    document.querySelectorAll('.dbg-tab-btn').forEach((b) => b.classList.toggle('active', b === btn));
+    for (const k in dbgTabEls) dbgTabEls[k].style.display = k === dbgActiveTab ? '' : 'none';
+    renderDbgActiveTab();
+  });
+});
+
+// --- スキル一覧タブ: 全スキルをレアリティ別に説明つきで並べる ---
+function renderDbgSkillList() {
+  const R = CONFIG.level.rarity;
+  const famLabel = { star: '星', sword: '霊剣', guardian: '守護者', summon: '召喚', arrow: '矢' };
+  let html = '<div class="dbg-note">全 ' + Object.keys(SKILLS).length +
+    ' 種。系統の「生成」はそのファミリーを作るスキル、「要」はその生成スキルを1つ取るまで抽選に出ない(requires ゲート)</div>';
+  for (const tier of ['common', 'rare', 'epic', 'legendary']) {
+    const ids = Object.keys(SKILLS).filter((id) => SKILLS[id].rarity === tier);
+    if (!ids.length) continue;
+    html += '<div class="dbg-sec" style="color:' + R[tier].color + '">' +
+      R[tier].label + '(' + ids.length + '種)</div><table class="dbg-table">';
+    for (const id of ids) {
+      const s = SKILLS[id];
+      const fam = s.family ? '生成:' + (famLabel[s.family] || s.family)
+        : s.requires ? '要:' + (famLabel[s.requires] || s.requires) : '—';
+      html += '<tr><td class="t-k">' + s.icon + ' ' + s.name + '</td>' +
+        '<td class="t-sm">Lv' + (level.taken[id] || 0) + '/' + s.max + '</td>' +
+        '<td class="t-sm">' + fam + '</td>' +
+        '<td class="t-desc">' + s.desc + '</td></tr>';
+    }
+    html += '</table>';
+  }
+  dbgTabEls.list.innerHTML = html;
+}
+
+// --- 火力表タブ: 現在の取得状況の実効値を CONFIG / level.stats から逆算して表示 ---
+// ゲーム側の計算式(fireArrow / firePlayerShot / starImpact / updateGuardians など)を
+// 変えたらここも追従させること。あくまで開発時の見積もり表で、ゲーム挙動には影響しない
+function renderDbgPower() {
+  const st = level.stats;
+  const C = CONFIG.player;
+  const A = CONFIG.arts;
+  const fmt = (v) => String(Math.round(v * 100) / 100);
+  const pct = (v) => Math.round(v * 100) + '%';
+  const row = (k, v, note) => '<tr><td class="t-k">' + k + '</td><td class="t-v">' + v +
+    '</td><td class="t-note">' + (note || '') + '</td></tr>';
+  const sec = (t, rows) => '<div class="dbg-sec">' + t + '</div><table class="dbg-table">' + rows + '</table>';
+  const ELEM_JP = { fire: '炎', ice: '氷', thunder: '雷', poison: '毒' };
+
+  // 矢 / 三日月刃(通常攻撃)
+  const dmg = C.arrowDamage * st.damageMul;
+  const interval = C.fireInterval / st.fireMul;
+  const front = 1 + st.multishot;
+  const arrows = front + (st.back ? 1 : 0) + (st.side ? 2 : 0);
+  const gMul = grazeShotMul();
+  let mainDps;                      // 概算合計に使う通常攻撃のDPS
+  let html = '';
+  if (!st.crescent) {
+    const echoMul = st.echo ? 1 + st.echo.ratio : 1;
+    const volley = dmg * arrows * echoMul;
+    mainDps = volley / interval;
+    let r = row('攻撃力 / 本', fmt(dmg), '基礎 ' + C.arrowDamage + ' × 攻撃倍率 ' + fmt(st.damageMul));
+    r += row('発射間隔', fmt(interval) + ' 秒', '基礎 ' + C.fireInterval + ' ÷ 速度倍率 ' + fmt(st.fireMul));
+    r += row('本数 / 斉射', arrows + ' 本', '正面' + front + (st.side ? ' + 両翼2' : '') + (st.back ? ' + 背面1' : ''));
+    if (st.pierce) r += row('貫通', '+' + st.pierce + ' 体', '1本が最大 ' + (1 + st.pierce) + ' 体に当たる');
+    if (st.echo) r += row('残響の鏃', '×' + fmt(echoMul), 'ヒット' + st.echo.delay + '秒後に' + pct(st.echo.ratio) + 'が再ヒット(実効倍率)');
+    r += row('斉射合計', fmt(volley), '全弾命中時');
+    r += row('DPS', fmt(mainDps), '斉射合計 ÷ 発射間隔');
+    if (st.lion) r += row('至近DPS(獅子)', fmt(mainDps * st.lion.nearMul), st.lion.nearDist + ' 以内で ×' + st.lion.nearMul);
+    html += sec('🏹 矢(通常攻撃)', r);
+  } else {
+    const cr = st.crescent;
+    const tick = dmg * cr.tickMul;
+    const tickInt = cr.tickInterval / (st.echo ? 2 : 1);
+    const life = cr.life + cr.pierceLife * st.pierce;
+    mainDps = tick / tickInt;
+    let r = row('刻みダメージ', fmt(tick), '矢の攻撃力 ' + fmt(dmg) + ' × ' + pct(cr.tickMul));
+    r += row('刻み間隔', fmt(tickInt) + ' 秒', st.echo ? '残響の鏃で半分' : '');
+    r += row('刃の寿命', life + ' ヒット', 'グレイズで+1(上限 ' + (cr.lifeMax + cr.pierceLife * st.pierce) + ')' +
+      (st.pierce ? '。射抜きの極意で +' + cr.pierceLife * st.pierce : ''));
+    r += row('1刃の総ダメージ', fmt(tick * life), '刻み × 寿命');
+    r += row('発射間隔 / 枚数', fmt(interval) + ' 秒 / ' + arrows + ' 枚', '');
+    r += row('対単体DPS', fmt(mainDps), '1枚が触れ続けた場合');
+    html += sec('🌙 三日月刃(弦月の構え)', r);
+  }
+
+  // 倍率・グレイズ
+  {
+    let r = row('強化ショット倍率', '×' + fmt(gMul),
+      st.zanshin ? '闘気の構え: チャージ満タン時' : 'チャージ1消費で次の斉射に適用');
+    if (st.zanshin) r += row('闘気の構え(現在)', '×' + fmt(zanshinMul()), 'チャージ ' + graze.charges + ' / ' + grazeChargeCap());
+    if (st.lion) r += row('獅子の間合い', '×' + st.lion.nearMul + ' 〜 ×' + st.lion.farMul,
+      st.lion.nearDist + ' 以内 〜 ' + st.lion.farDist + ' 以遠(線形減衰)');
+    r += row('グレイズ判定半径', fmt(CONFIG.graze.outerRadius * st.grazeRange),
+      st.grazeRange > 1 ? '弾幕遊戯 ×' + st.grazeRange : '');
+    html += sec('✨ 倍率・グレイズ', r);
+  }
+
+  // 召喚攻撃(取っているものだけ出す)
+  let summonDps = 0;                // 攻撃時トリガーと周期・守護者ぶんの期待DPS合計
+  const starOn = st.star.onAttack > 0 || st.star.onKill > 0 || st.star.onGraze;
+  if (starOn) {
+    const sDmg = A.star.damage * st.summonMul * (st.star.gravity ? st.star.gravity.dmgMul : 1);
+    const perDrop = sDmg * (st.star.twin ? 2 : 1);
+    let r = row('威力 / 発', fmt(sDmg), '基礎 ' + A.star.damage + ' × 召喚倍率 ' + fmt(st.summonMul) +
+      (st.star.gravity ? ' × 引力 ' + st.star.gravity.dmgMul : ''));
+    r += row('半径', fmt(starRadius()), '');
+    r += row('予兆時間', fmt(A.star.telegraph * st.star.telegraphMul) + ' 秒', '');
+    if (st.star.twin) r += row('双つ星', '2連', '1トリガーで計 ' + fmt(perDrop));
+    if (st.star.onAttack > 0) {
+      const dps = st.star.onAttack * perDrop / interval;
+      summonDps += dps;
+      r += row('攻撃時トリガー', pct(st.star.onAttack), '期待DPS ' + fmt(dps));
+    }
+    if (st.star.onKill > 0) r += row('撃破時トリガー', pct(st.star.onKill), '');
+    if (st.star.onGraze) r += row('グレイズ時', '100%', '弾の撃ち主へ落ちる');
+    if (st.star.sea) r += row('星屑の残り火', pct(st.star.sea.tickPct) + ' / ' + st.star.sea.tickEvery + '秒',
+      st.star.sea.duration + '秒間(星の威力比)');
+    html += sec('☄️ 星(範囲)', r);
+  }
+  const swordOn = st.sword.interval > 0 || st.sword.onAttack > 0 || st.sword.revenge;
+  if (swordOn) {
+    const wDmg = A.sword.damage * st.summonMul * (st.sword.oath ? st.sword.oath.dmgMul : 1);
+    let r = row('威力 / 本', fmt(wDmg), '基礎 ' + A.sword.damage + ' × 召喚倍率 ' + fmt(st.summonMul) +
+      (st.sword.oath ? ' × 剣印 ' + st.sword.oath.dmgMul : ''));
+    r += row('本数 / 回', st.sword.count + ' 本', '');
+    if (st.sword.interval > 0) {
+      const dps = wDmg * st.sword.count / st.sword.interval;
+      summonDps += dps;
+      r += row('周期(剣の雨)', fmt(st.sword.interval) + ' 秒', '期待DPS ' + fmt(dps));
+    }
+    if (st.sword.onAttack > 0) {
+      const dps = st.sword.onAttack * wDmg * st.sword.count / interval;
+      summonDps += dps;
+      r += row('攻撃時トリガー', pct(st.sword.onAttack), '期待DPS ' + fmt(dps));
+    }
+    if (st.sword.revenge) r += row('報復の剣', '被弾時 3 本', '');
+    if (st.sword.splash) r += row('剣気解放', pct(SKILLS.sword_wave.ratio), '半径 ' + SKILLS.sword_wave.radius + ' に割合ダメージ');
+    if (st.sword.oath) r += row('処刑(剣印 ' + st.sword.oath.marks + ' 本)',
+      fmt(wDmg * st.sword.oath.execRatio * st.sword.oath.marks),
+      '1本 ' + pct(st.sword.oath.execRatio) + ' × ' + st.sword.oath.marks + ' 本');
+    if (st.sword.grave) r += row('剣ノ墓標', pct(st.sword.grave.ratio), '半径 ' + st.sword.grave.radius + ' の衝撃波');
+    html += sec('🗡️ 霊剣(単体)', r);
+  }
+  const G = A.guardian;
+  const guardians = ['fire', 'ice', 'thunder', 'poison']
+    .map((el) => ({ el, lv: level.taken['guard_' + el] || 0 })).filter((g) => g.lv > 0);
+  if (guardians.length) {
+    let r = '';
+    for (const g of guardians) {
+      const lv2 = g.lv >= 2;
+      const rate = st.guardianRate / (lv2 ? G.lv2IntervalMul : 1);
+      const dm = st.summonMul * (lv2 ? G.lv2DamageMul : 1);
+      const bolt = g.el === 'thunder';
+      const base = bolt ? G.boltDamage : G.orbDamage;
+      const iv = (bolt ? G.boltInterval : G.orbInterval) / rate;
+      const per = base * dm * (bolt && st.guardBeast ? SKILLS.guard_beast.bolts : 1);
+      const dps = per / iv;
+      summonDps += dps;
+      r += row(ELEM_JP[g.el] + 'の守護者 Lv' + g.lv, fmt(base * dm) + ' / ' + fmt(iv) + '秒',
+        'DPS ' + fmt(dps) + (bolt && st.guardBeast ? '(落雷 ' + SKILLS.guard_beast.bolts + ' 連)' : ''));
+    }
+    if (st.guardFrenzy) r += row('野生解放', '狂化中 ×' + st.guardFrenzy.rateMul + ' / 平時 ÷' + st.guardFrenzy.slowMul,
+      '上の値は狂化倍率なしの数値');
+    html += sec('🐲 守護者(常時)', r);
+  }
+
+  // 属性(付いているファミリーだけ出す)
+  const elemFams = [];
+  if (st.arrowElems.length) elemFams.push(['矢', st.arrowElems]);
+  if (starOn && st.star.elems.length) elemFams.push(['星', st.star.elems]);
+  if (swordOn && st.sword.elems.length) elemFams.push(['霊剣', st.sword.elems]);
+  if (guardians.length) elemFams.push(['守護者', guardians.map((g) => g.el)]);
+  if (elemFams.length) {
+    const E = A.elements;
+    const note = {
+      fire: '燃焼 ' + pct(E.fire.tickPct) + '/' + E.fire.tickEvery + '秒 × ' + E.fire.duration +
+        '秒(計 ' + pct(E.fire.tickPct * E.fire.duration / E.fire.tickEvery) + ')',
+      ice: '凍結 ' + E.ice.freeze + '秒(再凍結まで ' + E.ice.cooldown + '秒)',
+      thunder: '連鎖 ' + pct(E.thunder.pct) + '(半径 ' + E.thunder.radius + ')',
+      poison: '毒 ' + pct(E.poison.tickPct) + '/秒(倒れるまで)',
+    };
+    let r = '';
+    for (const [name, elems] of elemFams) {
+      r += row(name, elems.map((e) => ELEM_JP[e]).join('・'), elems.map((e) => note[e]).join(' / '));
+    }
+    html += sec('🔥 属性(当てた攻撃の基礎ダメージ比)', r);
+  }
+
+  // サマリー
+  {
+    let r = row('概算DPS合計', fmt(mainDps + summonDps),
+      (st.crescent ? '刃1枚の対単体DPS' : '矢DPS') + ' + 召喚の期待DPS(強化ショット・撃破/被弾トリガー除く)');
+    r += row('最大HP', player.maxHp, '');
+    r += row('移動速度', fmt(C.speed * st.speedMul), '基礎 ' + C.speed + ' × ' + fmt(st.speedMul));
+    r += row('召喚ダメージ倍率', '×' + fmt(st.summonMul), '');
+    r += row('守護者攻撃速度', '×' + fmt(st.guardianRate), '');
+    html += sec('📊 サマリー', r);
+  }
+  dbgTabEls.power.innerHTML = html;
 }
 
 document.getElementById('dbg-skill-btn').addEventListener('click', openDbgPanel);
