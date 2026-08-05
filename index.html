@@ -1342,6 +1342,7 @@ function spawnFromPool(pool, pos, dir, speed, damage) {
     b.pierce = 0;
     b.elems = null;
     b.crit = false;
+    b.owner = null;                   // 敵弾の撃ち主(見切りの星の狙い先。プールの使い回しで残さない)
     if (b.hits) b.hits.clear();
     if (pool === arrowPool) {
       b.mesh.lookAt(pos.clone().add(dir));
@@ -1615,13 +1616,13 @@ function updateGrazeFx(dt) {
   }
 }
 
-// グレイズ成立(敵弾・レーザーの判定側から呼ぶ)
-function onGraze() {
+// グレイズ成立(敵弾・レーザーの判定側から呼ぶ)。src はその弾・レーザーの撃ち主(いれば)
+function onGraze(src) {
   graze.charges = Math.min(CONFIG.graze.chargeMax, graze.charges + 1);
   graze.rangeFlash = CONFIG.graze.rangeRingFlashDuration;
   const p = player.mesh.position;
   spawnGrazeFx(p.x, p.z, 1, 0xffffff);
-  onGrazeArts();                    // 見切りの星(グレイズ成立トリガー)
+  onGrazeArts(src);                 // 見切りの星(グレイズ成立トリガー。撃ち主がいればそこへ)
   // 弦月の構え: グレイズが飛んでいる刃の寿命を回復する(弾幕の濃さが刃の燃料になる)。
   // 上限は射抜きの極意で伸びた初期寿命ぶんだけ引き上げる
   const cs = level.stats.crescent;
@@ -1806,8 +1807,12 @@ const SKILLS = {
   // --- 召喚攻撃: 星(範囲)。family の生成スキルを1つでも持つと requires の属性・強化が抽選に並ぶ ---
   star_attack:  { icon: '☄️', name: '追撃の星',   desc: '攻撃時12%の確率で星が落ちて範囲ダメージ(重ねて20%→28%)', max: 3, family: 'star', chances: [0.12, 0.2, 0.28], rarity: 'rare' },
   star_kill:    { icon: '☄️', name: '弔いの星',   desc: '敵を倒すと25%の確率でその場に星が落ちる(重ねて40%→55%)', max: 3, family: 'star', chances: [0.25, 0.4, 0.55], rarity: 'rare' },
-  star_graze:   { icon: '☄️', name: '見切りの星', desc: 'グレイズが成立するたび、必ず星が落ちる', max: 1, family: 'star', rarity: 'epic' },
+  star_graze:   { icon: '☄️', name: '見切りの星', desc: 'グレイズが成立するたび、その弾を放った敵めがけて星が落ちる', max: 1, family: 'star', rarity: 'epic' },
   star_twin:    { icon: '🌠', name: '双つ星',     desc: '星が必ず2発連続で落ちるようになる', max: 1, requires: 'star', rarity: 'legendary' },
+  // --- 星ビルド「天墜」: 吸い込む予兆円で範囲攻撃を「当てにいく」。予兆の近くは敵弾も曲がる危険地帯になる ---
+  star_gravity: { icon: '🌀', name: '天墜の座',   desc: '星の威力と範囲が1.5倍になり、予兆の円が敵と敵弾を吸い込む。かわりに落下までの溜めが長くなる', max: 1, requires: 'star', dmgMul: 1.5, radiusMul: 1.5, telegraphMul: 1.6, pull: 4.5, bulletPull: 10, rarity: 'epic' },
+  star_bell:    { icon: '🎐', name: '呼び星の鈴', desc: '星の溜めが短くなり、すぐに落ちてくる', max: 1, requires: 'star', telegraphMul: 0.6, rarity: 'rare' },
+  star_sea:     { icon: '🌌', name: '星海',       desc: '星の着弾点に星屑の燃え跡が2秒残り、触れた敵を焼き続ける', max: 1, requires: 'star', duration: 2, tickEvery: 0.4, tickPct: 0.2, radiusMul: 0.8, rarity: 'legendary' },
   star_fire:    { icon: '🔥', name: '炎の星',     desc: '星に炎属性: 当てた敵を燃やして継続ダメージ', max: 1, requires: 'star', rarity: 'rare' },
   star_ice:     { icon: '❄️', name: '氷の星',     desc: '星に氷属性: 当てた敵を短時間凍らせる', max: 1, requires: 'star', rarity: 'rare' },
   star_thunder: { icon: '⚡', name: '雷の星',     desc: '星に雷属性: 命中時、周囲の敵へ電撃が連鎖', max: 1, requires: 'star', rarity: 'rare' },
@@ -1889,6 +1894,11 @@ function recomputeSkillStats() {
       onKill: Math.min(1, chance('star_kill') * summonRate),       // 撃破時に星が落ちる確率
       onGraze: n('star_graze') > 0,
       twin: n('star_twin') > 0,
+      gravity: n('star_gravity') > 0 ? SKILLS.star_gravity : null, // 天墜の座(吸い込み・威力/範囲1.5倍)
+      // 予兆時間の倍率(天墜で延び、鈴で縮む。両取りでほぼ元どおり)
+      telegraphMul: (n('star_gravity') > 0 ? SKILLS.star_gravity.telegraphMul : 1)
+        * (n('star_bell') > 0 ? SKILLS.star_bell.telegraphMul : 1),
+      sea: n('star_sea') > 0 ? SKILLS.star_sea : null,             // 星海(燃え跡)
       elems: elems('star'),
     },
     sword: {
@@ -2196,22 +2206,54 @@ function castStarAtRandomEnemy() {
   castStar(e.mesh.position.x, e.mesh.position.z);
 }
 
+// 天墜の座: 予兆〜落下中、円の範囲の敵と敵弾を中心へ吸い込む。
+// 敵弾は速さを変えず向きだけ曲げる(吸い込まれた弾は軌道が読みにくい = 予兆円の近くが危険地帯になる)
+function applyStarGravity(s, range, dt) {
+  const G = level.stats.star.gravity;
+  for (const e of enemies) {
+    const dx = s.x - e.mesh.position.x, dz = s.z - e.mesh.position.z;
+    const d = Math.hypot(dx, dz);
+    if (d < 0.3 || d > range + e.def.radius) continue;
+    const k = Math.min(G.pull * dt, d - 0.2);   // 中心を通り越さない
+    e.mesh.position.x += (dx / d) * k;
+    e.mesh.position.z += (dz / d) * k;
+  }
+  for (const eb of bulletPool) {
+    if (!eb.active) continue;
+    const dx = s.x - eb.mesh.position.x, dz = s.z - eb.mesh.position.z;
+    const d2 = dx * dx + dz * dz;
+    if (d2 > range * range || d2 < 1e-4) continue;
+    const d = Math.sqrt(d2), sp = eb.vel.length();
+    eb.vel.x += (dx / d) * G.bulletPull * dt;
+    eb.vel.z += (dz / d) * G.bulletPull * dt;
+    eb.vel.setLength(sp);
+  }
+}
+
+// 星の実効半径(天墜の座で広がる)
+const starRadius = () => CONFIG.arts.star.radius *
+  (level.stats.star.gravity ? level.stats.star.gravity.radiusMul : 1);
+
 function updateStars(dt) {
   const S = CONFIG.arts.star;
+  const st = level.stats.star;
+  const effR = starRadius();
   for (const s of starPool) {
     if (!s.active) continue;
     if (s.delay > 0) { s.delay -= dt; continue; }
     s.t += dt;
+    if (st.gravity) applyStarGravity(s, effR, dt);
     if (s.phase === 'tele') {
-      const t = Math.min(s.t / S.telegraph, 1);
+      const t = Math.min(s.t / (S.telegraph * st.telegraphMul), 1);
       s.ring.visible = true;
       s.ring.position.set(s.x, 0.05, s.z);
-      s.ring.scale.setScalar(0.3 + t * S.radius);
+      s.ring.scale.setScalar(0.3 + t * effR);
       s.ring.material.opacity = 0.35 + 0.35 * Math.sin(state.time * 22);
       if (t >= 1) {
         s.phase = 'fall';
         s.t = 0;
         s.ball.visible = true;
+        s.ball.scale.setScalar(st.gravity ? st.gravity.radiusMul : 1);   // 重い星は火球も大きく
       }
     } else {
       const t = Math.min(s.t / S.fallTime, 1);
@@ -2227,18 +2269,81 @@ function updateStars(dt) {
 
 function starImpact(s) {
   const S = CONFIG.arts.star;
+  const st = level.stats.star;
+  const effR = starRadius();
   spawnGrazeFx(s.x, s.z, 2.4, artColor(s.elems, S.color));   // 着弾の広がるリング
-  const dmg = S.damage * level.stats.summonMul;
+  const dmg = S.damage * level.stats.summonMul * (st.gravity ? st.gravity.dmgMul : 1);
   // damageEnemy が splice するので後ろから回す
   for (let i = enemies.length - 1; i >= 0; i--) {
     const e = enemies[i];
     const dx = e.mesh.position.x - s.x;
     const dz = e.mesh.position.z - s.z;
-    const r = S.radius + e.def.radius;
+    const r = effR + e.def.radius;
     if (dx * dx + dz * dz > r * r) continue;
     // 属性を先に付与する(とどめの一撃でも雷の連鎖は起きる)
     applyElems(e, dmg, s.elems);
     if (e.hpBar) damageEnemy(e, dmg);   // 連鎖が先にこの敵を倒していたら hpBar が null
+  }
+  if (st.sea) spawnStarSea(s.x, s.z, effR * st.sea.radiusMul, s.elems);   // 星海: 燃え跡を残す
+}
+
+// --- 星海(星の着弾点に残る星屑の燃え跡) ---
+const starSeaPool = (function () {
+  const items = [];
+  for (let i = 0; i < 6; i++) {
+    const mesh = new THREE.Mesh(
+      new THREE.CircleGeometry(1, 32),
+      new THREE.MeshBasicMaterial({
+        color: CONFIG.arts.star.color, transparent: true, opacity: 0.3,
+        blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide,
+      })
+    );
+    mesh.rotation.x = -Math.PI / 2;
+    mesh.position.y = 0.04;
+    mesh.visible = false;
+    scene.add(mesh);
+    items.push({ active: false, t: 0, tick: 0, x: 0, z: 0, r: 1, mesh });
+  }
+  return items;
+})();
+
+function spawnStarSea(x, z, r, elems) {
+  for (const p of starSeaPool) {
+    if (p.active) continue;
+    p.active = true;
+    p.t = 0;
+    p.tick = 0;
+    p.x = x;
+    p.z = z;
+    p.r = r;
+    p.mesh.visible = true;
+    p.mesh.position.set(x, 0.04, z);
+    p.mesh.scale.setScalar(r);
+    p.mesh.material.color.setHex(artColor(elems, CONFIG.arts.star.color));
+    return;
+  }
+}
+
+function updateStarSea(dt) {
+  const sea = level.stats.star.sea;
+  for (const p of starSeaPool) {
+    if (!p.active) continue;
+    if (!sea) { p.active = false; p.mesh.visible = false; continue; }
+    p.t += dt;
+    p.tick += dt;
+    if (p.t >= sea.duration) { p.active = false; p.mesh.visible = false; continue; }
+    p.mesh.material.opacity = 0.3 * (1 - p.t / sea.duration) + 0.08;
+    if (p.tick >= sea.tickEvery) {
+      p.tick = 0;
+      const dmg = CONFIG.arts.star.damage * level.stats.summonMul * sea.tickPct;
+      for (let i = enemies.length - 1; i >= 0; i--) {
+        const e = enemies[i];
+        const dx = e.mesh.position.x - p.x, dz = e.mesh.position.z - p.z;
+        const r = p.r + e.def.radius;
+        if (dx * dx + dz * dz > r * r) continue;
+        damageEnemy(e, dmg, 'dot');
+      }
+    }
   }
 }
 
@@ -2444,9 +2549,12 @@ function onPlayerHitArts() {
   if (level.stats.sword.revenge) castSwords(3);
 }
 
-// グレイズ成立: 見切りの星
-function onGrazeArts() {
-  if (level.stats.star.onGraze) castStarAtRandomEnemy();
+// グレイズ成立: 見切りの星。かすめた弾の撃ち主が生きていればそこへ撃ち返す(counter-battery)。
+// 撃ち主が既に倒れている・分からない(かき消し等)ときはランダムな敵へ
+function onGrazeArts(src) {
+  if (!level.stats.star.onGraze) return;
+  if (src && src.hpBar) castStar(src.mesh.position.x, src.mesh.position.z);
+  else castStarAtRandomEnemy();
 }
 
 // 敵を倒したとき(倒した位置に落とすので座標だけ受け取る): 弔いの星
@@ -2465,6 +2573,7 @@ function updateArts(dt) {
     }
   }
   updateStars(dt);
+  updateStarSea(dt);
   updateSwords(dt);
   updateGuardians(dt);
   updateBolts(dt);
@@ -2473,6 +2582,7 @@ function updateArts(dt) {
 // 場に出ている星・霊剣・弾・光柱を消す(チャプタークリアやタイトルへの遷移時。守護者は残す)
 function clearArtsFx() {
   for (const s of starPool) { s.active = false; s.ring.visible = s.ball.visible = false; }
+  for (const p of starSeaPool) { p.active = false; p.mesh.visible = false; }
   for (const w of swordPool) { w.active = false; w.mesh.visible = false; w.target = null; }
   for (const b of boltPool) { b.life = 0; b.mesh.visible = false; }
   clearPool(orbPool);
@@ -2572,7 +2682,7 @@ function updateLaser(enemy, dt) {
       damagePlayer(L.damage);
     } else if (!enemy.laserGrazed && d < half + CONFIG.graze.outerRadius * level.stats.grazeRange) {
       enemy.laserGrazed = true;                                 // 1本のレーザーにつき1回だけ
-      onGraze();
+      onGraze(enemy);
     }
 
     if (enemy.laserT >= L.duration) {
@@ -2805,7 +2915,10 @@ function fireEnemyAttack(enemy) {
   const dirs = BULLET_PATTERNS[atk.pattern](enemy, player.mesh.position);
   const origin = enemy.mesh.position.clone();
   origin.y = 0.9;
-  for (const d of dirs) spawnFromPool(bulletPool, origin, d, atk.speed * chapterDef().bulletSpeedMul, atk.damage);
+  for (const d of dirs) {
+    const b = spawnFromPool(bulletPool, origin, d, atk.speed * chapterDef().bulletSpeedMul, atk.damage);
+    if (b) b.owner = enemy;           // 見切りの星がこの弾の主へ撃ち返す
+  }
 }
 
 function updateEnemy(enemy, dt) {
@@ -3250,7 +3363,7 @@ function updateProjectiles(dt) {
     // grazed フラグで1発につき1回だけ数える
     if (!b.grazed) {
       if (d2 >= gzIn && d2 <= gzOut) b.near = true;
-      else if (b.near) { b.grazed = true; onGraze(); }
+      else if (b.near) { b.grazed = true; onGraze(b.owner); }
     }
   }
 }
@@ -3312,8 +3425,9 @@ function eclipseEat(p, r) {
     const dx = eb.mesh.position.x - p.x, dz = eb.mesh.position.z - p.z;
     if (dx * dx + dz * dz >= r * r) continue;
     spawnFlash(eb.mesh.position.x, 0.5, eb.mesh.position.z, CONFIG.fx.muzzle.size * 0.7, 0xcfe8ff);
+    const owner = eb.owner;
     deactivate(eb);
-    onGraze();
+    onGraze(owner);
   }
 }
 
