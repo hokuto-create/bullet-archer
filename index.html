@@ -1254,6 +1254,11 @@ function damagePlayer(amount) {
   if (player.invincible > 0 || state.phase !== 'playing') return;
   player.hp -= amount;
   player.invincible = CONFIG.player.hitInvincible;
+  // 残心: 被弾でチャージ全損(明鏡止水があれば半分だけ失う)
+  if (level.stats.zanshin && graze.charges > 0) {
+    graze.charges = level.stats.mirror ? Math.floor(graze.charges / 2) : 0;
+    updateGrazeHud();
+  }
   onPlayerHitArts();                // 報復の剣(無敵中に弾かれた分では発動しない)
   updateHud();
   if (player.hp <= 0) {
@@ -1618,7 +1623,7 @@ function updateGrazeFx(dt) {
 
 // グレイズ成立(敵弾・レーザーの判定側から呼ぶ)。src はその弾・レーザーの撃ち主(いれば)
 function onGraze(src) {
-  graze.charges = Math.min(CONFIG.graze.chargeMax, graze.charges + 1);
+  graze.charges = Math.min(grazeChargeCap(), graze.charges + 1);
   graze.rangeFlash = CONFIG.graze.rangeRingFlashDuration;
   const p = player.mesh.position;
   spawnGrazeFx(p.x, p.z, 1, 0xffffff);
@@ -1634,11 +1639,17 @@ function onGraze(src) {
       b.flash = 1;
     }
   }
+  // 野生解放: グレイズが守護者の手綱(狂化タイマーを満タンに)
+  if (level.stats.guardFrenzy) arts.frenzyT = level.stats.guardFrenzy.duration;
   updateGrazeHud();
 }
 
 // チャージ消費時の攻撃倍率。grazeup スキルで 2倍 → 2.5倍 → 3倍 と伸びる
 const grazeShotMul = () => 1 + (CONFIG.graze.damageMul - 1) * level.stats.grazeMul + level.stats.grazeFlat;
+// チャージ上限(残心で10に拡張)
+const grazeChargeCap = () => (level.stats.zanshin ? level.stats.zanshin.chargeCap : CONFIG.graze.chargeMax);
+// 残心の常時倍率: 満タンで強化ショットと同じ倍率になる(チャージ数に比例)
+const zanshinMul = () => 1 + (grazeShotMul() - 1) * (graze.charges / grazeChargeCap());
 
 function resetGraze() {
   graze.charges = 0;
@@ -1790,6 +1801,13 @@ const SKILLS = {
   broadhead: { icon: '🔶', name: '大鏃',       desc: '矢が一回り大きくなり当たりやすくなる。三日月刃はさらに大きく・ゆっくりになり、長く敵に触れる', max: 1, hitMul: 1.4, crescentScale: 1.35, crescentSlow: 0.8, rarity: 'rare' },
   echo_head: { icon: '🔔', name: '残響の鏃',   desc: '矢が当たった敵に0.2秒後、50%のダメージがもう一度響く。三日月刃は刻む速さが2倍になる', max: 1, ratio: 0.5, delay: 0.2, rarity: 'epic' },
   eclipse:   { icon: '🌑', name: '月蝕',       desc: '矢と三日月刃が敵弾に触れるとかき消す。かき消した1発ごとにグレイズが成立する', max: 1, rarity: 'legendary' },
+
+  // --- グレイズビルド「残心」: チャージを「消費する弾薬」から「維持するオーラ」に変える ---
+  // 倍率は 1 + (強化ショット倍率 - 1) × チャージ数/上限。紙一重の妙・弾幕遊戯を取ると
+  // 満タン時の倍率も一緒に伸びる(×2 → ×2.5 → ×3 …)。被弾で全損(明鏡止水で半減に緩和)
+  zanshin: { icon: '🧘', name: '残心',       desc: 'チャージが消費されなくなり、上限が10に増える。チャージ1つごとに攻撃が強くなり(満タンで強化ショットと同じ倍率)、被弾するとすべて失う', max: 1, chargeCap: 10, rarity: 'epic' },
+  maai:    { icon: '🍃', name: '間合いの妙', desc: 'グレイズ判定の内側に入った敵弾が少し遅くなり、見切りやすくなる', max: 1, slow: 0.75, rarity: 'rare' },
+  mirror:  { icon: '🪞', name: '明鏡止水',   desc: 'チャージが満タンの間、すべての敵弾が遅くなる。さらに被弾で失うチャージが半分で済む', max: 1, bulletSlow: 0.85, rarity: 'legendary' },
   graze_dance:{ icon: '💫', name: '弾幕遊戯',    desc: 'グレイズ判定の範囲が1.5倍に広がり、強化ショットの倍率 +50%', max: 1, rangeMul: 1.5, bonus: 0.5, rarity: 'legendary' },
   back:      { icon: '🔄', name: '背中の目',     desc: '後方にも矢を放つ', max: 1, rarity: 'rare' },
   side:      { icon: '↔️', name: '両翼の構え',   desc: '左右にも矢を放つ', max: 1, rarity: 'rare' },
@@ -1841,6 +1859,9 @@ const SKILLS = {
   guard_bond:    { icon: '🤝', name: '守護者の絆', desc: '守護者の攻撃速度 +10%', max: 3, value: 0.1, requires: 'guardian', rarity: 'common' },
   guard_oath:    { icon: '✊', name: '守護者の誓い', desc: '守護者の攻撃速度 +20%', max: 2, value: 0.2, requires: 'guardian', rarity: 'rare' },
   guard_beast:   { icon: '🐲', name: '聖獣化',   desc: '守護者の弾が巨大化して敵を貫通し、落雷は2体同時に落ちる', max: 1, pierce: 3, scale: 1.6, bolts: 2, requires: 'guardian', rarity: 'legendary' },
+  // --- 守護者ビルド「野生」: グレイズが獣の手綱。狂化の維持がプレイヤースキル ---
+  guard_frenzy:  { icon: '🐾', name: '野生解放', desc: 'グレイズするたび守護者が6秒間狂化し、攻撃間隔が半分・弾が大きくなる。狂化が切れている間は逆に攻撃が鈍る', max: 1, requires: 'guardian', duration: 6, rateMul: 2, slowMul: 1.5, orbScale: 1.4, rarity: 'epic' },
+  guard_gallop:  { icon: '🐎', name: '早駆けの蹄', desc: '守護者の公転が速くなり、敵への追従が良くなる', max: 1, requires: 'guardian', orbitMul: 1.7, rarity: 'rare' },
 
   // --- 召喚攻撃の共通強化 ---
   summon_power:  { icon: '📖', name: '召喚の心得', desc: '星・霊剣・守護者のダメージ +10%', max: 3, value: 0.1, requires: 'summon', rarity: 'common' },
@@ -1886,6 +1907,9 @@ function recomputeSkillStats() {
     back: n('back') > 0,
     side: n('side') > 0,
     grazeMul: 1 + SKILLS.grazeup.value * n('grazeup'),
+    zanshin: n('zanshin') > 0 ? SKILLS.zanshin : null,   // 残心(チャージ非消費・常時倍率)
+    maai: n('maai') > 0 ? SKILLS.maai : null,            // 間合いの妙(リング内の敵弾減速)
+    mirror: n('mirror') > 0 ? SKILLS.mirror : null,      // 明鏡止水(満タンで敵弾減速・損失半減)
     grazeRange: n('graze_dance') > 0 ? SKILLS.graze_dance.rangeMul : 1,   // グレイズ判定半径の倍率
     grazeFlat: n('graze_dance') > 0 ? SKILLS.graze_dance.bonus : 0,       // 強化ショット倍率への加算
     homing: n('homing') > 0,          // 矢の追尾
@@ -1918,6 +1942,8 @@ function recomputeSkillStats() {
     },
     guardianRate: (1 + SKILLS.guard_bond.value * n('guard_bond') + SKILLS.guard_oath.value * n('guard_oath')) * summonRate,
     guardBeast: n('guard_beast') > 0,   // 守護者の弾の巨大化・貫通、落雷2連
+    guardFrenzy: n('guard_frenzy') > 0 ? SKILLS.guard_frenzy : null,        // 野生解放(狂化ゲージ)
+    guardOrbitMul: n('guard_gallop') > 0 ? SKILLS.guard_gallop.orbitMul : 1, // 早駆けの蹄
   };
 }
 recomputeSkillStats();
@@ -1962,6 +1988,7 @@ function takeSkill(id) {
     player.parts.lionRing = ring;
   }
   if (SKILLS[id].family === 'guardian') syncGuardians();   // お供を場に出す/強化を反映
+  if (id === 'zanshin') updateGrazeHud();   // 上限・表示形式が変わるので即時反映
 }
 
 function resetLevel() {
@@ -2024,7 +2051,11 @@ function firePlayerShot(origin, dir) {
   const st = level.stats;
   const C = CONFIG.player;
   let mul = 1;
-  if (graze.charges > 0) {
+  if (st.zanshin) {
+    // 残心: チャージは消費せず、積んだ数に応じた常時倍率(満タンで強化ショットと同倍率)
+    mul = zanshinMul();
+    if (mul >= 2) spawnGrazeFx(origin.x, origin.z, 1.2, 0xffd76a);
+  } else if (graze.charges > 0) {
     graze.charges--;
     mul = grazeShotMul();
     spawnGrazeFx(origin.x, origin.z, 1.6, 0xffd76a);   // 強化ショットの金色の光
@@ -2568,20 +2599,29 @@ const _guardOrigin = new THREE.Vector3();
 function updateGuardians(dt) {
   const G = CONFIG.arts.guardian;
   const pp = player.mesh.position;
+  // 野生解放: グレイズで狂化(間隔半分・弾大きめ・回転速め)、切れている間は鈍る
+  const fz = level.stats.guardFrenzy;
+  if (arts.frenzyT > 0) arts.frenzyT -= dt;
+  const frenzied = !!fz && arts.frenzyT > 0;
+  const frenzyRate = fz ? (frenzied ? fz.rateMul : 1 / fz.slowMul) : 1;
+  // 公転角は積分で持つ(早駆け・狂化で速度が変わった瞬間に位置が跳ばないように)
+  arts.orbitA += G.orbitSpeed * level.stats.guardOrbitMul * (frenzied ? 1.3 : 1) * dt;
   for (let i = 0; i < guardians.length; i++) {
     const g = guardians[i];
     // プレイヤーの周りをゆっくり回りながら上下に浮遊する
-    const a = state.time * G.orbitSpeed + (i / guardians.length) * Math.PI * 2;
+    const a = arts.orbitA + (i / guardians.length) * Math.PI * 2;
     g.group.position.set(
       pp.x + Math.cos(a) * G.orbitRadius,
       G.height + Math.sin(state.time * 3 + g.seed) * 0.15,
       pp.z + Math.sin(a) * G.orbitRadius
     );
+    // 狂化中は体が膨らんで脈打つ(発光パーツは使わない方針なので大きさで語る)
+    g.group.scale.setScalar(frenzied ? 1.25 + 0.1 * Math.sin(state.time * 10) : 1);
     if (enemies.length === 0) continue;
     g.timer -= dt;
     if (g.timer > 0) continue;
     const lv2 = g.lv >= 2;
-    const rate = level.stats.guardianRate / (lv2 ? G.lv2IntervalMul : 1);
+    const rate = level.stats.guardianRate * frenzyRate / (lv2 ? G.lv2IntervalMul : 1);
     const dmgMul = level.stats.summonMul * (lv2 ? G.lv2DamageMul : 1);
     if (g.elem === 'thunder') {
       // 雷の守護者だけ即着弾の落雷(属性の連鎖もここから起きる)。
@@ -2608,9 +2648,11 @@ function updateGuardians(dt) {
       if (b) {
         b.elems = GUARDIAN_ELEMS[g.elem];
         b.mesh.material.color.setHex(ELEM_COLORS[g.elem]);
-        // 聖獣化: 弾が巨大化して貫通する(scale はプール使い回しなので毎回設定する)
+        // 聖獣化: 弾が巨大化して貫通する(scale はプール使い回しなので毎回設定する)。
+        // 狂化中の弾はさらに一回り大きい
         b.pierce = level.stats.guardBeast ? SKILLS.guard_beast.pierce : 0;
-        b.mesh.scale.setScalar(level.stats.guardBeast ? SKILLS.guard_beast.scale : 1);
+        b.mesh.scale.setScalar((level.stats.guardBeast ? SKILLS.guard_beast.scale : 1)
+          * (frenzied ? fz.orbScale : 1));
       }
     }
   }
@@ -2623,6 +2665,8 @@ const GUARDIAN_ELEMS = { fire: ['fire'], ice: ['ice'], thunder: ['thunder'], poi
 const arts = {
   swordTimer: 0,
   lastHit: null,    // 最後に自分の攻撃(矢・刃・守護者の弾)を当てた敵。導きの銘の狙い先
+  frenzyT: 0,       // 野生解放: 狂化の残り時間(グレイズで満タン)
+  orbitA: 0,        // 守護者の公転角(速度が変わっても跳ばないよう積分で持つ)
 };
 
 // 攻撃1回(斉射)ごと: 追撃の星・追影の剣
@@ -2676,6 +2720,7 @@ function clearArtsFx() {
   for (const m of gravePool) { m.life = 0; m.mesh.visible = false; }
   for (const b of boltPool) { b.life = 0; b.mesh.visible = false; }
   arts.lastHit = null;               // 導きの銘の狙い先も忘れる(前のランの敵を掴まない)
+  arts.frenzyT = 0;                  // 野生解放の狂化も解く
   clearPool(orbPool);
 }
 
@@ -3445,15 +3490,23 @@ function updateProjectiles(dt) {
   // 敵弾 → プレイヤー(被弾判定とグレイズ判定を同じループで見る)
   const pr = CONFIG.player.radius + 0.22;
   const gzIn = CONFIG.graze.innerRadius * CONFIG.graze.innerRadius;
-  const gzR = CONFIG.graze.outerRadius * level.stats.grazeRange;   // 弾幕遊戯で広がる
+  const gzR = CONFIG.graze.outerRadius * st.grazeRange;   // 弾幕遊戯で広がる
   const gzOut = gzR * gzR;
+  const pp = player.mesh.position;
+  // 明鏡止水: チャージ満タンの間、すべての敵弾が遅くなる
+  const mirrorSlow = st.mirror && graze.charges >= grazeChargeCap() ? st.mirror.bulletSlow : 1;
   for (const b of bulletPool) {
     if (!b.active) continue;
-    b.mesh.position.addScaledVector(b.vel, dt);
+    // 間合いの妙: グレイズリングの内側では敵弾がさらに遅くなる(移動前の位置で判定)
+    let mv = mirrorSlow;
+    if (st.maai) {
+      const mdx = b.mesh.position.x - pp.x, mdz = b.mesh.position.z - pp.z;
+      if (mdx * mdx + mdz * mdz <= gzOut) mv *= st.maai.slow;
+    }
+    b.mesh.position.addScaledVector(b.vel, dt * mv);
     b.life -= dt;
     const p = b.mesh.position;
     if (b.life <= 0 || Math.abs(p.x) > h || Math.abs(p.z) > h) { deactivate(b); continue; }
-    const pp = player.mesh.position;
     const dx = p.x - pp.x, dz = p.z - pp.z;
     const d2 = dx * dx + dz * dz;
     if (d2 < pr * pr) {
@@ -3637,13 +3690,20 @@ function updateHud() {
 
 // グレイズのチャージ表示。チャージがある間はバーが金色に点滅し、次の攻撃の倍率を出す
 function updateGrazeHud() {
+  const cap = grazeChargeCap();
   const charged = graze.charges > 0;
-  grazeBar.style.width = (graze.charges / CONFIG.graze.chargeMax * 100) + '%';
+  grazeBar.style.width = (graze.charges / cap * 100) + '%';
   grazeBar.classList.toggle('full', charged);
   grazeLabel.classList.toggle('full', charged);
-  grazeLabel.textContent = charged
-    ? '次の攻撃 ×' + (Math.round(grazeShotMul() * 10) / 10) + '  (チャージ ' + graze.charges + ')'
-    : 'GRAZE で次の攻撃を強化';
+  if (level.stats.zanshin) {
+    // 残心: 消費しない常時倍率を表示(被弾で失う緊張感はバーの伸びで伝わる)
+    grazeLabel.textContent = '残心 ×' + (Math.round(zanshinMul() * 100) / 100) +
+      '  (チャージ ' + graze.charges + '/' + cap + ')';
+  } else {
+    grazeLabel.textContent = charged
+      ? '次の攻撃 ×' + (Math.round(grazeShotMul() * 10) / 10) + '  (チャージ ' + graze.charges + ')'
+      : 'GRAZE で次の攻撃を強化';
+  }
 }
 
 // 経験値バーと Lv 表示
