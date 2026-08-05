@@ -1300,7 +1300,7 @@ function damagePlayer(amount) {
   if (player.invincible > 0 || state.phase !== 'playing') return;
   player.hp -= amount;
   player.invincible = CONFIG.player.hitInvincible;
-  // 残心: 被弾でチャージ全損(明鏡止水があれば半分だけ失う)
+  // 闘気の構え: 被弾でチャージ全損(明鏡止水があれば半分だけ失う)
   if (level.stats.zanshin && graze.charges > 0) {
     graze.charges = level.stats.mirror ? Math.floor(graze.charges / 2) : 0;
     updateGrazeHud();
@@ -1692,9 +1692,9 @@ function onGraze(src) {
 
 // チャージ消費時の攻撃倍率。grazeup スキルで 2倍 → 2.5倍 → 3倍 と伸びる
 const grazeShotMul = () => 1 + (CONFIG.graze.damageMul - 1) * level.stats.grazeMul + level.stats.grazeFlat;
-// チャージ上限(残心で10に拡張)
+// チャージ上限(闘気の構えで10に拡張)
 const grazeChargeCap = () => (level.stats.zanshin ? level.stats.zanshin.chargeCap : CONFIG.graze.chargeMax);
-// 残心の常時倍率: 満タンで強化ショットと同じ倍率になる(チャージ数に比例)
+// 闘気の構えの常時倍率: 満タンで強化ショットと同じ倍率になる(チャージ数に比例)
 const zanshinMul = () => 1 + (grazeShotMul() - 1) * (graze.charges / grazeChargeCap());
 
 function resetGraze() {
@@ -1846,13 +1846,13 @@ const SKILLS = {
   crescent:  { icon: '🌙', name: '弦月の構え', desc: '発射に約1秒のチャージが要るようになるかわりに、矢が大きな三日月の刃になる。刃は触れている敵を55%で刻み続け、合計8ヒットで砕ける。グレイズするたび飛んでいる刃の寿命+1', max: 1, intervalMul: 2.6, tickMul: 0.55, tickInterval: 0.15, life: 8, lifeMax: 12, pierceLife: 8, speedMul: 0.4, radius: 1.5, flightTime: 4, rarity: 'epic' },
   broadhead: { icon: '🔶', name: '大鏃',       desc: '矢が一回り大きくなり当たりやすくなる。三日月刃はさらに大きく・ゆっくりになり、長く敵に触れる', max: 1, hitMul: 1.4, crescentScale: 1.35, crescentSlow: 0.8, rarity: 'rare' },
   echo_head: { icon: '🔔', name: '残響の鏃',   desc: '矢が当たった敵に0.2秒後、50%のダメージがもう一度響く。三日月刃は刻む速さが2倍になる', max: 1, ratio: 0.5, delay: 0.2, rarity: 'epic' },
-  eclipse:   { icon: '🌑', name: '月蝕',       desc: '矢と三日月刃が敵弾に触れるとかき消す。かき消した1発ごとにグレイズが成立する', max: 1, rarity: 'legendary' },
+  eclipse:   { icon: '🌑', name: '弾喰いの月', desc: '矢と三日月刃が敵弾に触れるとかき消す。かき消した1発ごとにグレイズが成立する', max: 1, rarity: 'legendary' },
 
-  // --- グレイズビルド「残心」: チャージを「消費する弾薬」から「維持するオーラ」に変える ---
+  // --- グレイズビルド「闘気の構え」: チャージを「消費する弾薬」から「維持するオーラ」に変える ---
   // 倍率は 1 + (強化ショット倍率 - 1) × チャージ数/上限。紙一重の妙・弾幕遊戯を取ると
   // 満タン時の倍率も一緒に伸びる(×2 → ×2.5 → ×3 …)。被弾で全損(明鏡止水で半減に緩和)
-  zanshin: { icon: '🧘', name: '残心',       desc: 'チャージが消費されなくなり、上限が10に増える。チャージ1つごとに攻撃が強くなり(満タンで強化ショットと同じ倍率)、被弾するとすべて失う', max: 1, chargeCap: 10, rarity: 'epic' },
-  maai:    { icon: '🍃', name: '間合いの妙', desc: 'グレイズ判定の内側に入った敵弾が少し遅くなり、見切りやすくなる', max: 1, slow: 0.75, rarity: 'rare' },
+  zanshin: { icon: '🧘', name: '闘気の構え', desc: 'チャージが消費されなくなり、上限が10に増える。チャージ1つごとに攻撃が強くなり(満タンで強化ショットと同じ倍率)、被弾するとすべて失う', max: 1, chargeCap: 10, rarity: 'epic' },
+  maai:    { icon: '🍃', name: '淀みの間合い', desc: 'グレイズ判定の内側に入った敵弾が少し遅くなり、見切りやすくなる', max: 1, slow: 0.75, rarity: 'rare' },
   mirror:  { icon: '🪞', name: '明鏡止水',   desc: 'チャージが満タンの間、すべての敵弾が遅くなる。さらに被弾で失うチャージが半分で済む', max: 1, bulletSlow: 0.85, rarity: 'legendary' },
   graze_dance:{ icon: '💫', name: '弾幕遊戯',    desc: 'グレイズ判定の範囲が1.5倍に広がり、強化ショットの倍率 +50%', max: 1, rangeMul: 1.5, bonus: 0.5, rarity: 'legendary' },
   back:      { icon: '🔄', name: '背中の目',     desc: '後方にも矢を放つ', max: 1, rarity: 'rare' },
@@ -1873,10 +1873,10 @@ const SKILLS = {
   star_kill:    { icon: '☄️', name: '弔いの星',   desc: '敵を倒すと25%の確率でその場に星が落ちる(重ねて40%→55%)', max: 3, family: 'star', chances: [0.25, 0.4, 0.55], rarity: 'rare' },
   star_graze:   { icon: '☄️', name: '見切りの星', desc: 'グレイズが成立するたび、その弾を放った敵めがけて星が落ちる', max: 1, family: 'star', rarity: 'epic' },
   star_twin:    { icon: '🌠', name: '双つ星',     desc: '星が必ず2発連続で落ちるようになる', max: 1, requires: 'star', rarity: 'legendary' },
-  // --- 星ビルド「天墜」: 吸い込む予兆円で範囲攻撃を「当てにいく」。予兆の近くは敵弾も曲がる危険地帯になる ---
-  star_gravity: { icon: '🌀', name: '天墜の座',   desc: '星の威力と範囲が1.5倍になり、予兆の円が敵と敵弾を吸い込む。かわりに落下までの溜めが長くなる', max: 1, requires: 'star', dmgMul: 1.5, radiusMul: 1.5, telegraphMul: 1.6, pull: 4.5, bulletPull: 10, rarity: 'epic' },
-  star_bell:    { icon: '🎐', name: '呼び星の鈴', desc: '星の溜めが短くなり、すぐに落ちてくる', max: 1, requires: 'star', telegraphMul: 0.6, rarity: 'rare' },
-  star_sea:     { icon: '🌌', name: '星海',       desc: '星の着弾点に星屑の燃え跡が2秒残り、触れた敵を焼き続ける', max: 1, requires: 'star', duration: 2, tickEvery: 0.4, tickPct: 0.2, radiusMul: 0.8, rarity: 'legendary' },
+  // --- 星ビルド「引力の星」: 吸い込む予兆円で範囲攻撃を「当てにいく」。予兆の近くは敵弾も曲がる危険地帯になる ---
+  star_gravity: { icon: '🌀', name: '引力の星',   desc: '星の威力と範囲が1.5倍になり、予兆の円が敵と敵弾を吸い込む。かわりに落下までの溜めが長くなる', max: 1, requires: 'star', dmgMul: 1.5, radiusMul: 1.5, telegraphMul: 1.6, pull: 4.5, bulletPull: 10, rarity: 'epic' },
+  star_bell:    { icon: '🎐', name: '早星の鈴',   desc: '星の溜めが短くなり、すぐに落ちてくる', max: 1, requires: 'star', telegraphMul: 0.6, rarity: 'rare' },
+  star_sea:     { icon: '🌌', name: '星屑の残り火', desc: '星の着弾点に星屑の燃え跡が2秒残り、触れた敵を焼き続ける', max: 1, requires: 'star', duration: 2, tickEvery: 0.4, tickPct: 0.2, radiusMul: 0.8, rarity: 'legendary' },
   star_fire:    { icon: '🔥', name: '炎の星',     desc: '星に炎属性: 当てた敵を燃やして継続ダメージ', max: 1, requires: 'star', rarity: 'rare' },
   star_ice:     { icon: '❄️', name: '氷の星',     desc: '星に氷属性: 当てた敵を短時間凍らせる', max: 1, requires: 'star', rarity: 'rare' },
   star_thunder: { icon: '⚡', name: '雷の星',     desc: '星に雷属性: 命中時、周囲の敵へ電撃が連鎖', max: 1, requires: 'star', rarity: 'rare' },
@@ -1888,9 +1888,9 @@ const SKILLS = {
   sword_revenge: { icon: '🗡️', name: '報復の剣', desc: '被弾すると霊剣3本で反撃する', max: 1, family: 'sword', rarity: 'epic' },
   sword_double:  { icon: '⚔️', name: '剣嵐',     desc: '一度に降る霊剣が1本増える', max: 2, requires: 'sword', rarity: 'epic' },
   sword_wave:    { icon: '🌪️', name: '剣気解放', desc: '霊剣の着弾時、周囲の敵にも50%の剣気ダメージ', max: 1, radius: 2.2, ratio: 0.5, requires: 'sword', rarity: 'legendary' },
-  // --- 霊剣ビルド「百剣」: 印を溜めて一斉に弾けさせる処刑コンボ ---
-  sword_oath:    { icon: '⚜️', name: '百剣の誓い', desc: '霊剣のダメージが30%下がるかわりに、斬られた敵へ剣印が残る。印が3つたまると弾け、印1つにつき150%の処刑ダメージ', max: 1, requires: 'sword', dmgMul: 0.7, marks: 3, execRatio: 1.5, rarity: 'epic' },
-  sword_guide:   { icon: '🧭', name: '導きの銘',   desc: '霊剣が「最後に自分の攻撃を当てた敵」めがけて降るようになる', max: 1, requires: 'sword', rarity: 'rare' },
+  // --- 霊剣ビルド「剣印」: 印を溜めて一斉に弾けさせる処刑コンボ ---
+  sword_oath:    { icon: '⚜️', name: '剣印の誓い', desc: '霊剣のダメージが30%下がるかわりに、斬られた敵へ剣印が残る。印が3つたまると弾け、印1つにつき150%の処刑ダメージ', max: 1, requires: 'sword', dmgMul: 0.7, marks: 3, execRatio: 1.5, rarity: 'epic' },
+  sword_guide:   { icon: '🧭', name: '追い打ちの剣', desc: '霊剣が「最後に自分の攻撃を当てた敵」めがけて降るようになる', max: 1, requires: 'sword', rarity: 'rare' },
   sword_grave:   { icon: '🪦', name: '剣ノ墓標',   desc: '処刑で敵が倒れるとその場に剣が立ち、周囲へ100%の剣気の衝撃波を放つ', max: 1, requires: 'sword', ratio: 1.0, radius: 2.5, rarity: 'legendary' },
   sword_fire:    { icon: '🔥', name: '炎の霊剣', desc: '霊剣に炎属性: 貫いた敵を燃やして継続ダメージ', max: 1, requires: 'sword', rarity: 'rare' },
   sword_ice:     { icon: '❄️', name: '氷の霊剣', desc: '霊剣に氷属性: 貫いた敵を短時間凍らせる', max: 1, requires: 'sword', rarity: 'rare' },
@@ -1946,15 +1946,15 @@ function recomputeSkillStats() {
     crescent,                         // 弦月の構え(未取得なら null。fireArrow が矢を刃に置き換える)
     arrowHitMul: n('broadhead') > 0 ? SKILLS.broadhead.hitMul : 1,   // 大鏃: 矢の当たり判定倍率
     echo: n('echo_head') > 0 ? SKILLS.echo_head : null,              // 残響の鏃(刃では刻み倍速に変質)
-    eclipse: n('eclipse') > 0,        // 月蝕: 自弾が敵弾をかき消してグレイズ化
+    eclipse: n('eclipse') > 0,        // 弾喰いの月: 自弾が敵弾をかき消してグレイズ化
     speedMul: 1 + SKILLS.boots.value * n('boots'),
     multishot: n('multishot'),      // 正面の追加本数
     pierce: n('pierce'),            // 貫通できる敵の数
     back: n('back') > 0,
     side: n('side') > 0,
     grazeMul: 1 + SKILLS.grazeup.value * n('grazeup'),
-    zanshin: n('zanshin') > 0 ? SKILLS.zanshin : null,   // 残心(チャージ非消費・常時倍率)
-    maai: n('maai') > 0 ? SKILLS.maai : null,            // 間合いの妙(リング内の敵弾減速)
+    zanshin: n('zanshin') > 0 ? SKILLS.zanshin : null,   // 闘気の構え(チャージ非消費・常時倍率)
+    maai: n('maai') > 0 ? SKILLS.maai : null,            // 淀みの間合い(リング内の敵弾減速)
     mirror: n('mirror') > 0 ? SKILLS.mirror : null,      // 明鏡止水(満タンで敵弾減速・損失半減)
     grazeRange: n('graze_dance') > 0 ? SKILLS.graze_dance.rangeMul : 1,   // グレイズ判定半径の倍率
     grazeFlat: n('graze_dance') > 0 ? SKILLS.graze_dance.bonus : 0,       // 強化ショット倍率への加算
@@ -1968,11 +1968,11 @@ function recomputeSkillStats() {
       onKill: Math.min(1, chance('star_kill') * summonRate),       // 撃破時に星が落ちる確率
       onGraze: n('star_graze') > 0,
       twin: n('star_twin') > 0,
-      gravity: n('star_gravity') > 0 ? SKILLS.star_gravity : null, // 天墜の座(吸い込み・威力/範囲1.5倍)
-      // 予兆時間の倍率(天墜で延び、鈴で縮む。両取りでほぼ元どおり)
+      gravity: n('star_gravity') > 0 ? SKILLS.star_gravity : null, // 引力の星(吸い込み・威力/範囲1.5倍)
+      // 予兆時間の倍率(引力の星で延び、鈴で縮む。両取りでほぼ元どおり)
       telegraphMul: (n('star_gravity') > 0 ? SKILLS.star_gravity.telegraphMul : 1)
         * (n('star_bell') > 0 ? SKILLS.star_bell.telegraphMul : 1),
-      sea: n('star_sea') > 0 ? SKILLS.star_sea : null,             // 星海(燃え跡)
+      sea: n('star_sea') > 0 ? SKILLS.star_sea : null,             // 星屑の残り火(燃え跡)
       elems: elems('star'),
     },
     sword: {
@@ -1981,8 +1981,8 @@ function recomputeSkillStats() {
       revenge: n('sword_revenge') > 0,
       count: 1 + n('sword_double'),           // 一度に降る本数
       splash: n('sword_wave') > 0,            // 着弾時の範囲ダメージ(剣気解放)
-      oath: n('sword_oath') > 0 ? SKILLS.sword_oath : null,    // 百剣の誓い(剣印→処刑)
-      guide: n('sword_guide') > 0,            // 導きの銘(最後に当てた敵を狙う)
+      oath: n('sword_oath') > 0 ? SKILLS.sword_oath : null,    // 剣印の誓い(剣印→処刑)
+      guide: n('sword_guide') > 0,            // 追い打ちの剣(最後に当てた敵を狙う)
       grave: n('sword_grave') > 0 ? SKILLS.sword_grave : null, // 剣ノ墓標(処刑撃破で衝撃波)
       elems: elems('sword'),
     },
@@ -2098,7 +2098,7 @@ function firePlayerShot(origin, dir) {
   const C = CONFIG.player;
   let mul = 1;
   if (st.zanshin) {
-    // 残心: チャージは消費せず、積んだ数に応じた常時倍率(満タンで強化ショットと同倍率)
+    // 闘気の構え: チャージは消費せず、積んだ数に応じた常時倍率(満タンで強化ショットと同倍率)
     mul = zanshinMul();
     if (mul >= 2) spawnGrazeFx(origin.x, origin.z, 1.2, 0xffd76a);
   } else if (graze.charges > 0) {
@@ -2290,7 +2290,7 @@ function castStarAtRandomEnemy() {
   castStar(e.mesh.position.x, e.mesh.position.z);
 }
 
-// 天墜の座: 予兆〜落下中、円の範囲の敵と敵弾を中心へ吸い込む。
+// 引力の星: 予兆〜落下中、円の範囲の敵と敵弾を中心へ吸い込む。
 // 敵弾は速さを変えず向きだけ曲げる(吸い込まれた弾は軌道が読みにくい = 予兆円の近くが危険地帯になる)
 function applyStarGravity(s, range, dt) {
   const G = level.stats.star.gravity;
@@ -2314,7 +2314,7 @@ function applyStarGravity(s, range, dt) {
   }
 }
 
-// 星の実効半径(天墜の座で広がる)
+// 星の実効半径(引力の星で広がる)
 const starRadius = () => CONFIG.arts.star.radius *
   (level.stats.star.gravity ? level.stats.star.gravity.radiusMul : 1);
 
@@ -2368,10 +2368,10 @@ function starImpact(s) {
     applyElems(e, dmg, s.elems);
     if (e.hpBar) damageEnemy(e, dmg);   // 連鎖が先にこの敵を倒していたら hpBar が null
   }
-  if (st.sea) spawnStarSea(s.x, s.z, effR * st.sea.radiusMul, s.elems);   // 星海: 燃え跡を残す
+  if (st.sea) spawnStarSea(s.x, s.z, effR * st.sea.radiusMul, s.elems);   // 星屑の残り火: 燃え跡を残す
 }
 
-// --- 星海(星の着弾点に残る星屑の燃え跡) ---
+// --- 星屑の残り火(星の着弾点に残る星屑の燃え跡) ---
 const starSeaPool = (function () {
   const items = [];
   for (let i = 0; i < 6; i++) {
@@ -2452,7 +2452,7 @@ const swordPool = (function () {
 
 function castSwords(n) {
   if (enemies.length === 0) return;
-  // 導きの銘: 最後に自分の攻撃を当てた敵が生きていればそこへ集中(印を1体に溜められる)
+  // 追い打ちの剣: 最後に自分の攻撃を当てた敵が生きていればそこへ集中(印を1体に溜められる)
   const sw = level.stats.sword;
   const guided = sw.guide && arts.lastHit && arts.lastHit.hpBar ? arts.lastHit : null;
   for (let i = 0; i < n; i++) {
@@ -2490,7 +2490,7 @@ function updateSwords(dt) {
       const sw = level.stats.sword;
       const splash = sw.splash;
       spawnGrazeFx(w.x, w.z, splash ? 1.8 : 0.9, artColor(w.elems, W.color));
-      const dmg = W.damage * level.stats.summonMul * (sw.oath ? sw.oath.dmgMul : 1);   // 百剣の誓いは単発減
+      const dmg = W.damage * level.stats.summonMul * (sw.oath ? sw.oath.dmgMul : 1);   // 剣印の誓いは単発減
       if (w.target && w.target.hpBar) {
         applyElems(w.target, dmg, w.elems);
         if (w.target.hpBar) damageEnemy(w.target, dmg);
@@ -2515,7 +2515,7 @@ function updateSwords(dt) {
   }
 }
 
-// --- 百剣の誓い(剣印と処刑)---
+// --- 剣印の誓い(剣印と処刑)---
 // 剣印は敵の頭上で回る小剣で表す。ジオメトリ・マテリアルは全敵で共有し、
 // メッシュだけ印が付いた敵に遅延生成する(removeEnemy が回収)
 const swordMarkGeo = new THREE.ConeGeometry(0.13, 0.9, 6);
@@ -2710,7 +2710,7 @@ const GUARDIAN_ELEMS = { fire: ['fire'], ice: ['ice'], thunder: ['thunder'], poi
 // --- トリガーと毎フレーム更新 ---
 const arts = {
   swordTimer: 0,
-  lastHit: null,    // 最後に自分の攻撃(矢・刃・守護者の弾)を当てた敵。導きの銘の狙い先
+  lastHit: null,    // 最後に自分の攻撃(矢・刃・守護者の弾)を当てた敵。追い打ちの剣の狙い先
   frenzyT: 0,       // 野生解放: 狂化の残り時間(グレイズで満タン)
   orbitA: 0,        // 守護者の公転角(速度が変わっても跳ばないよう積分で持つ)
 };
@@ -2765,7 +2765,7 @@ function clearArtsFx() {
   for (const w of swordPool) { w.active = false; w.mesh.visible = false; w.target = null; }
   for (const m of gravePool) { m.life = 0; m.mesh.visible = false; }
   for (const b of boltPool) { b.life = 0; b.mesh.visible = false; }
-  arts.lastHit = null;               // 導きの銘の狙い先も忘れる(前のランの敵を掴まない)
+  arts.lastHit = null;               // 追い打ちの剣の狙い先も忘れる(前のランの敵を掴まない)
   arts.frenzyT = 0;                  // 野生解放の狂化も解く
   clearPool(orbPool);
 }
@@ -3035,7 +3035,7 @@ function spawnEnemy(typeName, waveNum) {
     freezeT: 0, freezeCd: 0,              // 凍結: 残り時間 / 再凍結までのクールダウン
     poisonTick: 0, poisonDmg: 0,          // 毒: 次のダメージまで / 毎秒のダメージ(0 なら未感染)
     echoT: 0, echoDmg: 0,                 // 残響の鏃: 発動までの残り / 積まれたダメージ
-    swordMarks: 0, markMesh: null,        // 百剣の誓い: 剣印の数 / 頭上の小剣(遅延生成)
+    swordMarks: 0, markMesh: null,        // 剣印の誓い: 剣印の数 / 頭上の小剣(遅延生成)
     hitFlash: 0, hitSquash: 0,            // 被弾の白フラッシュ / ぷにっと潰れの残り時間
   };
   enemies.push(enemy);
@@ -3149,7 +3149,7 @@ function updateEnemy(enemy, dt) {
   if (enemy.hitFlash > 0) enemy.hitFlash -= dt;
   bodyMat.emissive.setHex(enemy.hitFlash > 0 ? 0xb8b8b8 : frozen ? 0x2255aa : 0x000000);
   // 被弾のぷにっと潰れ: 山なりに横へ膨らみ縦に縮む(当たり判定には影響しない)
-  // 剣印(百剣の誓い): 頭上で回る小剣。数は大きさで伝える
+  // 剣印(剣印の誓い): 頭上で回る小剣。数は大きさで伝える
   if (enemy.markMesh) {
     enemy.markMesh.visible = enemy.swordMarks > 0;
     if (enemy.swordMarks > 0) {
@@ -3499,7 +3499,7 @@ function updateProjectiles(dt) {
       b.life -= dt;
       const p = b.mesh.position;
       if (b.life <= 0 || Math.abs(p.x) > h || Math.abs(p.z) > h) { deactivate(b); continue; }
-      // 月蝕: 矢は触れた敵弾をかき消す(グレイズ成立扱い)
+      // 弾喰いの月: 矢は触れた敵弾をかき消す(グレイズ成立扱い)
       if (st.eclipse && pool === arrowPool) eclipseEat(p, 0.35 * st.arrowHitMul);
       // damageEnemy が removeEnemy(splice)を呼ぶので、敵は後ろから回す
       for (let ei = enemies.length - 1; ei >= 0; ei--) {
@@ -3512,7 +3512,7 @@ function updateProjectiles(dt) {
         // 巻き添えで敵配列が縮むことはあるので damageEnemy 側の生存確認に hpBar を使う
         applyElems(e, b.damage, b.elems);
         if (e.hpBar) damageEnemy(e, b.damage, b.crit ? 'crit' : undefined);
-        if (e.hpBar) arts.lastHit = e;           // 導きの銘: 最後に当てた敵を覚える
+        if (e.hpBar) arts.lastHit = e;           // 追い打ちの剣: 最後に当てた敵を覚える
         // 残響の鏃: 矢のヒットは一拍おいてもう一度響く(敵側に積んで updateEnemy が鳴らす)
         if (st.echo && pool === arrowPool && e.hpBar) {
           e.echoT = st.echo.delay;
@@ -3543,7 +3543,7 @@ function updateProjectiles(dt) {
   const mirrorSlow = st.mirror && graze.charges >= grazeChargeCap() ? st.mirror.bulletSlow : 1;
   for (const b of bulletPool) {
     if (!b.active) continue;
-    // 間合いの妙: グレイズリングの内側では敵弾がさらに遅くなる(移動前の位置で判定)
+    // 淀みの間合い: グレイズリングの内側では敵弾がさらに遅くなる(移動前の位置で判定)
     let mv = mirrorSlow;
     if (st.maai) {
       const mdx = b.mesh.position.x - pp.x, mdz = b.mesh.position.z - pp.z;
@@ -3586,7 +3586,7 @@ function updateCrescents(dt) {
     if (!cs || b.life <= 0 || Math.abs(p.x) > h || Math.abs(p.z) > h) { deactivate(b); continue; }
     // 開口部を常に後方へ(自転はさせない: 追尾中も進行方向が読めるように)
     b.mesh.rotation.set(-Math.PI / 2, 0, Math.atan2(b.vel.z, -b.vel.x) - (Math.PI + CRESCENT_ARC / 2));
-    // 月蝕: 刃の全面が敵弾を食う
+    // 弾喰いの月: 刃の全面が敵弾を食う
     if (st.eclipse) eclipseEat(p, cs.radius * b.scaleMul + 0.22);
     b.tickT -= dt;
     if (b.tickT <= 0) {
@@ -3599,7 +3599,7 @@ function updateCrescents(dt) {
         if (dx * dx + dz * dz >= rr * rr) continue;
         applyElems(e, b.damage * cs.tickMul, b.elems);
         if (e.hpBar) damageEnemy(e, b.damage * cs.tickMul, b.crit ? 'crit' : 'dot');
-        if (e.hpBar) arts.lastHit = e;           // 導きの銘: 刃の研削でも狙い先を更新
+        if (e.hpBar) arts.lastHit = e;           // 追い打ちの剣: 刃の研削でも狙い先を更新
         if (st.regenChance > 0 && player.hp < player.maxHp && Math.random() < st.regenChance) {
           player.hp = Math.min(player.maxHp, player.hp + SKILLS.regen.value);
           updateHud();
@@ -3620,7 +3620,7 @@ function updateCrescents(dt) {
   }
 }
 
-// 月蝕: 中心 p・半径 r に入った敵弾をかき消し、1発ごとにグレイズ成立扱いにする
+// 弾喰いの月: 中心 p・半径 r に入った敵弾をかき消し、1発ごとにグレイズ成立扱いにする
 // (チャージ加算・見切りの星・刃の寿命回復まで、通常のグレイズと同じ経路を通る)
 function eclipseEat(p, r) {
   for (const eb of bulletPool) {
@@ -3742,8 +3742,8 @@ function updateGrazeHud() {
   grazeBar.classList.toggle('full', charged);
   grazeLabel.classList.toggle('full', charged);
   if (level.stats.zanshin) {
-    // 残心: 消費しない常時倍率を表示(被弾で失う緊張感はバーの伸びで伝わる)
-    grazeLabel.textContent = '残心 ×' + (Math.round(zanshinMul() * 100) / 100) +
+    // 闘気の構え: 消費しない常時倍率を表示(被弾で失う緊張感はバーの伸びで伝わる)
+    grazeLabel.textContent = '闘気 ×' + (Math.round(zanshinMul() * 100) / 100) +
       '  (チャージ ' + graze.charges + '/' + cap + ')';
   } else {
     grazeLabel.textContent = charged
@@ -3789,7 +3789,7 @@ function untakeSkill(id) {
   }
   if (SKILLS[id].family === 'guardian') syncGuardians();
   if (id === 'sword_oath') for (const e of enemies) e.swordMarks = 0;   // 印の表示を残さない
-  graze.charges = Math.min(graze.charges, grazeChargeCap());   // 残心を外したら上限3に収める
+  graze.charges = Math.min(graze.charges, grazeChargeCap());   // 闘気の構えを外したら上限3に収める
   updateGrazeHud();
 }
 

@@ -128,10 +128,10 @@ GitHub Pages で公開する前提の、ビルド不要な単一 `index.html` �
     2倍→2.5倍→3倍と伸びる。倍率は `fireArrow()` の第6引数 `mul` で渡す
   - チャージは減衰しない。HUD のバーはチャージ数/上限を表し、チャージがある間は金色に点滅して
     「次の攻撃 ×2」のように倍率を表示する(`updateGrazeHud()`)
-  - **グレイズビルド「残心」**: `zanshin` 残心(epic。チャージ非消費・上限 `chargeCap` 10 に拡張
+  - **グレイズビルド「闘気の構え」**: `zanshin` 闘気の構え(epic。チャージ非消費・上限 `chargeCap` 10 に拡張
     (`grazeChargeCap()`)。倍率は `zanshinMul()` = 1 + (強化ショット倍率−1) × チャージ/上限 —
     紙一重の妙・弾幕遊戯で満タン倍率も伸びる。**被弾で全損**(`damagePlayer()`。明鏡止水で半減))/
-    `maai` 間合いの妙(rare。グレイズリング内の敵弾を `slow` 0.75 倍速に。移動前の位置で判定)/
+    `maai` 淀みの間合い(rare。グレイズリング内の敵弾を `slow` 0.75 倍速に。移動前の位置で判定)/
     `mirror` 明鏡止水(legendary。チャージ満タン中は全敵弾 `bulletSlow` 0.85 倍速+損失半減)
   - テレグラフレーザー(`ENEMY_TYPES.shooter.laser`): 予兆の細い赤線 0.8 秒 → 太いビーム 0.4 秒(15ダメージ)。
     発射点・角度は予兆開始時に固定して**追尾しない**ので、線の外へ出れば必ず避けられる。
@@ -192,7 +192,7 @@ GitHub Pages で公開する前提の、ビルド不要な単一 `index.html` �
     `broadhead` 大鏃(rare。単体: 矢の当たり判定 `hitMul` 倍。刃: `crescentScale` 倍に大きく
     `crescentSlow` 倍に遅く)/ `echo_head` 残響の鏃(epic。単体: 矢のヒット 0.2 秒後に 50% を
     もう一度 = 敵側の `echoT`/`echoDmg` に積んで `updateEnemy()` が鳴らす。刃: 刻み間隔が半分)/
-    `eclipse` 月蝕(legendary。矢・刃が敵弾に触れると `eclipseEat()` でかき消し、1発ごとに `onGraze()`
+    `eclipse` 弾喰いの月(legendary。矢・刃が敵弾に触れると `eclipseEat()` でかき消し、1発ごとに `onGraze()`
     = チャージ・見切りの星・刃の寿命回復まで通常グレイズと同じ経路)。
     既存スキルの役割変化: `pierce` は刃では寿命 +`pierceLife`(8)/Lv(グレイズ回復の上限も同じだけ伸びる)、
     `homing` は刃が敵に張り付く追尾、
@@ -217,21 +217,21 @@ GitHub Pages で公開する前提の、ビルド不要な単一 `index.html` �
   - **星**(範囲): 生成トリガーは3スキル(攻撃時確率 `star_attack` / 撃破時確率 `star_kill` /
     グレイズ時 `star_graze`)。金色の予兆円 → 火球落下 → `starImpact()` が範囲に `damageEnemy()`。
     `star_twin` 双つ星(legendary)で必ず2連。確率の段階は各スキルの `chances` 配列に持つ
-    - **星ビルド「天墜」**: `star_gravity` 天墜の座(epic。威力・範囲1.5倍+予兆円が敵と敵弾を吸い込む
+    - **星ビルド「引力の星」**: `star_gravity` 引力の星(epic。威力・範囲1.5倍+予兆円が敵と敵弾を吸い込む
       `applyStarGravity()`。敵弾は速さを変えず向きだけ曲げる。かわりに予兆 `telegraphMul` 1.6倍)/
-      `star_bell` 呼び星の鈴(rare。予兆 0.6倍。天墜と両取りでほぼ元の速さ)/
-      `star_sea` 星海(legendary。着弾点に `starSeaPool` の燃え跡が `duration` 秒残り
+      `star_bell` 早星の鈴(rare。予兆 0.6倍。引力の星と両取りでほぼ元の速さ)/
+      `star_sea` 星屑の残り火(legendary。着弾点に `starSeaPool` の燃え跡が `duration` 秒残り
       `tickPct` を刻む。`updateStarSea()`)。
       **見切りの星は counter-battery**: グレイズした弾の撃ち主へ星を返す(敵弾の `owner` を
-      `fireEnemyAttack()` で記録し、`onGraze(src)` → `onGrazeArts(src)` に流す。レーザー・月蝕の
+      `fireEnemyAttack()` で記録し、`onGraze(src)` → `onGrazeArts(src)` に流す。レーザー・弾喰いの月の
       かき消しも撃ち主を渡す)。実効半径は `starRadius()` に集約
   - **霊剣**(単体): 周期 `sword_rain`(段階は `intervals` 配列)/ 攻撃時 `sword_attack` /
     被弾時 `sword_revenge`。ランダムな敵の頭上から落ち、落下中は対象を追う。
     対象が先に倒れたら不発(演出だけ)。`sword_double` 剣嵐で一度の本数+1
-    - **霊剣ビルド「百剣」**: `sword_oath` 百剣の誓い(epic。単発 `dmgMul` 0.7 に減るかわりに
+    - **霊剣ビルド「剣印」**: `sword_oath` 剣印の誓い(epic。単発 `dmgMul` 0.7 に減るかわりに
       ヒットで剣印。`marks` 3 で処刑 = 印1本 `execRatio` 1.5 倍。`addSwordMark()`。
       印は頭上で回る小剣 `markMesh`(共有ジオメトリ・敵ごと遅延生成、removeEnemy が回収))/
-      `sword_guide` 導きの銘(rare。`arts.lastHit`(矢・刃・守護者弾の最終ヒット先)を優先して狙う)/
+      `sword_guide` 追い打ちの剣(rare。`arts.lastHit`(矢・刃・守護者弾の最終ヒット先)を優先して狙う)/
       `sword_grave` 剣ノ墓標(legendary。処刑でとどめを刺すと `swordGrave()` が
       `ratio` 100% の衝撃波(半径 `radius` 2.5)+ `gravePool` の立つ剣の演出)
   - **守護者**(常時のお供): 属性そのものが生成スキル(対応表は `GUARDIAN_SKILLS`)。
