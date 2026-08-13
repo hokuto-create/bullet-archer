@@ -293,6 +293,12 @@
     color: #e8eefc; font-size: 12px; cursor: pointer; text-align: left;
   }
   .dbg-row.maxed { opacity: .55; cursor: default; }
+  .dbg-group-h {
+    grid-column: 1 / -1; margin-top: 8px; padding-bottom: 2px;
+    color: #ffd76a; font-size: 12px; font-weight: bold;
+    border-bottom: 1px solid #3a4a70;
+  }
+  #dbg-list .dbg-group-h:first-child { margin-top: 0; }
   .dbg-name { flex: 1; }
   .dbg-lv { color: var(--rc); }
   .dbg-minus {
@@ -3835,24 +3841,57 @@ function updateGrazeHud() {
 
 // ===== [DEBUG] 開発画面(使用感テスト用。リリース時にこのセクションを丸ごと削除) =====
 // プレイ中(またはタイトル)に 🛠ボタン or キー K でパネルを開く。タブは3つ:
-// - スキル取得: 任意のスキルを取得/レベルダウンできる(requires ゲートも無視)
+// - スキル取得: 任意のスキルを取得/レベルダウンできる(requires ゲートも無視)。
+//   系統(弓・矢/弦月/グレイズ/星/霊剣/守護者/召喚強化/ステータス)ごとに見出し付きで並べる
 // - スキル一覧: 全スキルをレアリティ別に説明つきで一覧する(バランス調整の見取り図)
 // - 火力表: 現在の取得状況から実効ダメージ・間隔・DPSを CONFIG / level.stats から逆算して表示
 // プレイ中に開いている間はレベルアップと同じポーズ扱いで、ウェーブクリアは waveQueued に退避される
 const dbgPanel = document.getElementById('dbg-panel');
 const dbgList = document.getElementById('dbg-list');
 
+// スキル取得タブの系統グループ(表示順)。星・霊剣・守護者・召喚強化は SKILLS の
+// family / requires から引けるので、それを持たない汎用スキルだけ ids に列挙する。
+// どこにも該当しない id は「弓・矢」へ落ちる(新スキルを足しても行方不明にならない)
+const DBG_GROUPS = [
+  { key: 'arrow',    label: '🏹 弓・矢(通常攻撃)' },
+  { key: 'crescent', label: '🌙 弦月ビルド', ids: ['crescent', 'broadhead', 'echo_head', 'eclipse'] },
+  { key: 'graze',    label: '💫 グレイズ', ids: ['grazeup', 'zanshin', 'maai', 'mirror', 'graze_dance'] },
+  { key: 'star',     label: '☄️ 星(範囲召喚)' },
+  { key: 'sword',    label: '🗡️ 霊剣(単体召喚)' },
+  { key: 'guardian', label: '🐾 守護者(お供)' },
+  { key: 'summon',   label: '📖 召喚の共通強化' },
+  { key: 'stats',    label: '🧍 ステータス', ids: ['power', 'rapid', 'boots', 'vital', 'regen', 'mighty', 'flurry', 'warlord'] },
+];
+
+function dbgGroupOf(id) {
+  const fam = SKILLS[id].family || SKILLS[id].requires;
+  if (fam) return fam;              // star / sword / guardian / summon
+  for (const g of DBG_GROUPS) if (g.ids && g.ids.includes(id)) return g.key;
+  return 'arrow';
+}
+
 function renderDbgPanel() {
   const R = CONFIG.level.rarity;
-  let html = '';
+  const byGroup = {};
   for (const id in SKILLS) {
-    const s = SKILLS[id];
-    const tk = level.taken[id] || 0;
-    html += '<div class="dbg-row' + (tk >= s.max ? ' maxed' : '') + '" data-id="' + id + '"' +
-      ' style="--rc:' + R[s.rarity].color + '">' +
-      '<span>' + s.icon + '</span><span class="dbg-name">' + s.name + '</span>' +
-      '<span class="dbg-lv">' + tk + '/' + s.max + '</span>' +
-      '<button class="dbg-minus"' + (tk <= 0 ? ' disabled' : '') + '>−</button></div>';
+    const key = dbgGroupOf(id);
+    if (!byGroup[key]) byGroup[key] = [];
+    byGroup[key].push(id);
+  }
+  let html = '';
+  for (const g of DBG_GROUPS) {
+    const ids = byGroup[g.key];
+    if (!ids) continue;
+    html += '<div class="dbg-group-h">' + g.label + '</div>';
+    for (const id of ids) {
+      const s = SKILLS[id];
+      const tk = level.taken[id] || 0;
+      html += '<div class="dbg-row' + (tk >= s.max ? ' maxed' : '') + '" data-id="' + id + '"' +
+        ' style="--rc:' + R[s.rarity].color + '">' +
+        '<span>' + s.icon + '</span><span class="dbg-name">' + s.name + '</span>' +
+        '<span class="dbg-lv">' + tk + '/' + s.max + '</span>' +
+        '<button class="dbg-minus"' + (tk <= 0 ? ' disabled' : '') + '>−</button></div>';
+    }
   }
   dbgList.innerHTML = html;
 }
