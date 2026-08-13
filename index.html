@@ -1689,6 +1689,7 @@ function resetFx() {
 const graze = {
   charges: 0,        // 0 〜 CONFIG.graze.chargeMax。firePlayerShot() が1つずつ消費する
   rangeFlash: 0,     // >0 の間は判定範囲リングを明るく表示(成立の瞬間にセット)
+  arrowCd: 0,        // 燕返しの矢の残りクールダウン(updatePlayer() が減らす)
 };
 
 // グレイズ成立時に一瞬出す白いリング(強化ショット発射の金色の光にも使い回す)
@@ -1755,8 +1756,24 @@ function onGraze(src) {
   }
   // 野生解放: グレイズが守護者の手綱(狂化タイマーを満タンに)
   if (level.stats.guardFrenzy) arts.frenzyT = level.stats.guardFrenzy.duration;
+  // 燕返しの矢: グレイズへの反撃として最寄りの敵へ矢を1本放つ(移動中でも出る唯一の矢)。
+  // fireArrow を通すので攻撃力・貫通・属性・弦月の刃化は乗るが、倍率はチャージと独立の素の1倍
+  // (チャージを消費しないのに強化倍率が乗ると紛らわしいため)。月蝕のかき消し由来のグレイズでも
+  // 発動するが、クールダウンがあるので「消す→撃つ→消す」の連鎖で暴走はしない
+  if (level.stats.grazeArrow && graze.arrowCd <= 0) {
+    const t = nearestEnemy();
+    if (t) {
+      graze.arrowCd = level.stats.grazeArrow.cooldown;
+      _counterDir.subVectors(t.mesh.position, p).setY(0).normalize();
+      const origin = p.clone(); origin.y = 0.95;   // 通常射撃と同じ、弓を構える高さ
+      fireArrow(origin, _counterDir, 0, CONFIG.player.arrowSpeed, CONFIG.player.arrowDamage, 1);
+      spawnFlash(origin.x + _counterDir.x * 0.8, origin.y + 0.1, origin.z + _counterDir.z * 0.8,
+        CONFIG.fx.muzzle.size, 0xffffff);
+    }
+  }
   updateGrazeHud();
 }
+const _counterDir = new THREE.Vector3();   // 燕返しの矢の射線(フレーム中に new しない)
 
 // チャージ消費時の攻撃倍率。grazeup スキルで 2倍 → 2.5倍 → 3倍 と伸びる
 const grazeShotMul = () => 1 + (CONFIG.graze.damageMul - 1) * level.stats.grazeMul + level.stats.grazeFlat;
@@ -1768,6 +1785,7 @@ const zanshinMul = () => 1 + (grazeShotMul() - 1) * (graze.charges / grazeCharge
 function resetGraze() {
   graze.charges = 0;
   graze.rangeFlash = 0;
+  graze.arrowCd = 0;
   for (const fx of grazeFxPool) { fx.life = 0; fx.mesh.visible = false; }
   updateGrazeHud();
 }
@@ -1923,6 +1941,10 @@ const SKILLS = {
   maai:    { icon: '🍃', name: '淀みの間合い', desc: 'グレイズ判定の内側に入った敵弾が少し遅くなり、見切りやすくなる', max: 1, slow: 0.75, rarity: 'rare' },
   mirror:  { icon: '🪞', name: '明鏡止水',   desc: 'チャージが満タンの間、すべての敵弾が遅くなる。さらに被弾で失うチャージが半分で済む', max: 1, bulletSlow: 0.85, rarity: 'legendary' },
   graze_dance:{ icon: '💫', name: '弾幕遊戯',    desc: 'グレイズ判定の範囲が1.5倍に広がり、強化ショットの倍率 +50%', max: 1, rangeMul: 1.5, bonus: 0.5, rarity: 'legendary' },
+  // 燕返しの矢: 「停止中のみ攻撃」の唯一の例外。グレイズは回避中(=移動中)に起きるので、
+  // 動きながら弾を掠めて撃ち返すプレイが成立する。クールダウンはボス弾幕・月蝕のかき消し連打で
+  // 機関銃化しないための抑え(onGraze() 側で参照)
+  graze_arrow:{ icon: '🏹', name: '燕返しの矢',  desc: 'グレイズが成立した瞬間、移動中でも最寄りの敵へ矢を放って反撃する(1秒に1回まで)', max: 1, cooldown: 1.0, rarity: 'epic' },
   back:      { icon: '🔄', name: '背中の目',     desc: '後方にも矢を放つ', max: 1, rarity: 'rare' },
   side:      { icon: '↔️', name: '両翼の構え',   desc: '左右にも矢を放つ', max: 1, rarity: 'rare' },
   grazeup:   { icon: '✨', name: '紙一重の妙',   desc: 'グレイズ強化ショットの倍率アップ(2倍→2.5倍→3倍)', max: 2, value: 0.5, rarity: 'rare' },
@@ -2026,6 +2048,7 @@ function recomputeSkillStats() {
     mirror: n('mirror') > 0 ? SKILLS.mirror : null,      // 明鏡止水(満タンで敵弾減速・損失半減)
     grazeRange: n('graze_dance') > 0 ? SKILLS.graze_dance.rangeMul : 1,   // グレイズ判定半径の倍率
     grazeFlat: n('graze_dance') > 0 ? SKILLS.graze_dance.bonus : 0,       // 強化ショット倍率への加算
+    grazeArrow: n('graze_arrow') > 0 ? SKILLS.graze_arrow : null,         // 燕返しの矢(グレイズで反撃)
     homing: n('homing') > 0,          // 矢の追尾
     regenChance: n('regen') > 0 ? SKILLS.regen.chance : 0,   // ヒット時にHP回復する確率
     // --- 召喚攻撃・エレメント ---
@@ -3556,6 +3579,8 @@ function updatePlayer(dt) {
   }
   if (moving) { player.aiming = false; player.anim.drawGoal = 0; }
 
+  if (graze.arrowCd > 0) graze.arrowCd -= dt;   // 燕返しの矢のクールダウン
+
   if (player.invincible > 0) {
     player.invincible -= dt;
     player.mesh.visible = Math.floor(state.time * 16) % 2 === 0; // 点滅
@@ -3876,7 +3901,7 @@ const dbgList = document.getElementById('dbg-list');
 const DBG_GROUPS = [
   { key: 'arrow',    label: '🏹 弓・矢(通常攻撃)' },
   { key: 'crescent', label: '🌙 弦月ビルド', ids: ['crescent', 'broadhead', 'echo_head', 'eclipse'] },
-  { key: 'graze',    label: '💫 グレイズ', ids: ['grazeup', 'zanshin', 'maai', 'mirror', 'graze_dance'] },
+  { key: 'graze',    label: '💫 グレイズ', ids: ['grazeup', 'zanshin', 'maai', 'mirror', 'graze_dance', 'graze_arrow'] },
   { key: 'star',     label: '☄️ 星(範囲召喚)' },
   { key: 'sword',    label: '🗡️ 霊剣(単体召喚)' },
   { key: 'guardian', label: '🐾 守護者(お供)' },
@@ -4089,6 +4114,10 @@ function renderDbgPower() {
       st.grazeRange > 1 ? '弾幕遊戯 ×' + st.grazeRange : '基礎 ' + CONFIG.graze.outerRadius);
     r += row('月蝕', st.eclipse ? '有効' : '—',
       st.eclipse ? '自弾が敵弾をかき消してグレイズ化' : NA);
+    r += row('燕返しの矢', st.grazeArrow ? fmt(dmg) + ' / 発' : '—',
+      st.grazeArrow
+        ? 'グレイズ成立で反撃(' + st.grazeArrow.cooldown + '秒に1回。最大DPS ' + fmt(dmg / st.grazeArrow.cooldown) + ')'
+        : NA + '(' + SKILLS.graze_arrow.cooldown + '秒に1回、素の攻撃力で1本)');
     html += sec('✨ 倍率・グレイズ', r);
   }
 
