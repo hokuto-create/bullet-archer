@@ -1402,28 +1402,47 @@ const bulletPool = makePool(CONFIG.pool.bullets, () =>
 
 // 三日月刃(弦月の構え)。矢の置き換えだが「触れている間、一定間隔で刻む」独自の
 // 当たり方をするため playerShotPools には入れず updateCrescents() で回す。
+// 見た目は「三日月形の刃」のイラスト: 外円から内円をえぐったシルエット(makeCrescentShape。
+// 円の交点で両端の角が自然に尖る)を 暗い縁取り → 鋼の刃身 → 外周の刃先 の3層に重ね、
+// 下に金色のグローを敷く。刃は自転しながら飛ぶ(SKILLS.crescent.spin)。
 // ジオメトリは全刃で共有し、寿命でグローの明るさを変えるためマテリアルだけ刃ごとに持つ
-const CRESCENT_ARC = Math.PI * 1.35;          // 3/4 欠けの月
-const CRESCENT_GEO_R = 0.65;                  // ジオメトリの見た目半径(コアの外周)。判定半径→スケール換算用
+const CRESCENT_GEO_R = 0.65;                  // ジオメトリの見た目半径(刃の外周)。判定半径→スケール換算用
+
+// 半径 R の外円から、+x へ dx ずらした半径 ri の内円をえぐった三日月形(開口は +x 側)
+function makeCrescentShape(R, ri, dx) {
+  const ix = (dx * dx + R * R - ri * ri) / (2 * dx);   // 2円の交点 = 三日月の角
+  const iy = Math.sqrt(Math.max(R * R - ix * ix, 1e-4));
+  const a0 = Math.atan2(iy, ix);                       // 交点の角度(外円基準)
+  const a1 = Math.atan2(iy, ix - dx);                  // 同(内円の中心基準)
+  const s = new THREE.Shape();
+  s.absarc(0, 0, R, a0, Math.PI * 2 - a0, false);      // 外周を大回りに
+  s.absarc(dx, 0, ri, -a1, a1, true);                  // 内周を逆向きに戻って閉じる
+  return s;
+}
 const crescentGeos = {
-  glow: new THREE.TorusGeometry(0.55, 0.16, 10, 40, CRESCENT_ARC),
-  core: new THREE.TorusGeometry(0.55, 0.075, 10, 40, CRESCENT_ARC),
-  film: new THREE.CircleGeometry(0.5, 40),    // 内側の薄い膜(研削の「場」を感じさせる)
+  blade: new THREE.ShapeGeometry(makeCrescentShape(CRESCENT_GEO_R, 0.52, 0.28), 48), // 刃身(縁取り・グローにも共用)
+  edge:  new THREE.ShapeGeometry(makeCrescentShape(CRESCENT_GEO_R, 0.60, 0.10), 48), // 外周に沿う細い刃先(角へ向けて先細り)
 };
 const crescentPool = makePool(CONFIG.pool.crescents, () => {
   const g = new THREE.Group();
   const glowMat = new THREE.MeshBasicMaterial({
     color: 0xffd76a, transparent: true, opacity: 0.35,
-    blending: THREE.AdditiveBlending, depthWrite: false,
-  });
-  const coreMat = new THREE.MeshBasicMaterial({ color: 0xffedb0 });
-  const filmMat = new THREE.MeshBasicMaterial({
-    color: 0xffe9a8, transparent: true, opacity: 0.12,
     blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide,
   });
-  g.add(new THREE.Mesh(crescentGeos.glow, glowMat));
-  g.add(new THREE.Mesh(crescentGeos.core, coreMat));
-  g.add(new THREE.Mesh(crescentGeos.film, filmMat));
+  const coreMat = new THREE.MeshBasicMaterial({ color: 0xffedb0, side: THREE.DoubleSide });   // 刃先(フラッシュで白に)
+  const outlineMat = new THREE.MeshBasicMaterial({ color: 0x4a3d26, side: THREE.DoubleSide }); // 暗い縁取り
+  const bodyMat = new THREE.MeshBasicMaterial({ color: 0xaebccb, side: THREE.DoubleSide });    // 鋼の刃身
+  // 子の z は回転後のワールド高さ = 重なり順。下から グロー < 縁取り < 刃身 < 刃先
+  const glow = new THREE.Mesh(crescentGeos.blade, glowMat);
+  glow.scale.setScalar(1.16);
+  const outline = new THREE.Mesh(crescentGeos.blade, outlineMat);
+  outline.position.z = 0.004;
+  const body = new THREE.Mesh(crescentGeos.blade, bodyMat);
+  body.scale.setScalar(0.9);                  // 縮めると縁取りが輪郭線として覗く
+  body.position.z = 0.008;
+  const edge = new THREE.Mesh(crescentGeos.edge, coreMat);
+  edge.position.z = 0.012;
+  g.add(glow, outline, body, edge);
   g.userData = { glowMat, coreMat };          // 更新時に触るのはこの2枚だけ
   return g;
 });
@@ -1892,7 +1911,7 @@ const SKILLS = {
   // 射抜きの極意は刃では「寿命 +pierceLife/Lv」に変質し、隼の瞳は刃が敵に張り付く追尾になる
   // intervalMul 2.6 ≒ 発射サイクル約1秒(0.38×2.6)。radius はヒット判定半径で、
   // 見た目のスケールも fireCrescent() がこの値から合わせる(通過だけでも2〜3刻み入る大きさ)
-  crescent:  { icon: '🌙', name: '弦月の構え', desc: '発射に約1秒のチャージが要るようになるかわりに、矢が大きな三日月の刃になる。刃は触れている敵を55%で刻み続け、合計8ヒットで砕ける。グレイズするたび飛んでいる刃の寿命+1', max: 1, intervalMul: 2.6, tickMul: 0.55, tickInterval: 0.15, life: 8, lifeMax: 12, pierceLife: 8, speedMul: 0.4, radius: 1.5, flightTime: 4, rarity: 'epic' },
+  crescent:  { icon: '🌙', name: '弦月の構え', desc: '発射に約1秒のチャージが要るようになるかわりに、矢が大きな三日月の刃になる。刃は触れている敵を55%で刻み続け、合計8ヒットで砕ける。グレイズするたび飛んでいる刃の寿命+1', max: 1, intervalMul: 2.6, tickMul: 0.55, tickInterval: 0.15, life: 8, lifeMax: 12, pierceLife: 8, speedMul: 0.4, spin: 7, radius: 1.5, flightTime: 4, rarity: 'epic' },
   broadhead: { icon: '🔶', name: '大鏃',       desc: '矢が一回り大きくなり当たりやすくなる。三日月刃はさらに大きく・ゆっくりになり、長く敵に触れる', max: 1, hitMul: 1.4, crescentScale: 1.35, crescentSlow: 0.8, rarity: 'rare' },
   echo_head: { icon: '🔔', name: '残響の鏃',   desc: '矢が当たった敵に0.2秒後、50%のダメージがもう一度響く。三日月刃は刻む速さが2倍になる', max: 1, ratio: 0.5, delay: 0.2, rarity: 'epic' },
   eclipse:   { icon: '🌑', name: '月蝕', desc: '矢と三日月刃が敵弾に触れるとかき消す。かき消した1発ごとにグレイズが成立する', max: 1, rarity: 'legendary' },
@@ -2132,6 +2151,7 @@ function fireCrescent(origin, dir, damage, crit) {
     b.grind = cs.life + level.stats.pierce * cs.pierceLife;   // 残り寿命(合計ヒット数)
     b.tickT = 0;
     b.flash = 0;                      // グレイズ回復の白い瞬き
+    b.spinA = Math.atan2(dir.z, -dir.x);   // 自転の初期角: 開口(+x)が進行方向の逆を向く角度から回し始める
     b.scaleMul = bh ? bh.crescentScale : 1;
     // 見た目をヒット判定半径(cs.radius × 大鏃倍率)に合わせる
     b.mesh.scale.setScalar((cs.radius / CRESCENT_GEO_R) * b.scaleMul);
@@ -3671,8 +3691,9 @@ function updateCrescents(dt) {
     b.life -= dt;
     const p = b.mesh.position;
     if (!cs || b.life <= 0 || Math.abs(p.x) > h || Math.abs(p.z) > h) { deactivate(b); continue; }
-    // 開口部を常に後方へ(自転はさせない: 追尾中も進行方向が読めるように)
-    b.mesh.rotation.set(-Math.PI / 2, 0, Math.atan2(b.vel.z, -b.vel.x) - (Math.PI + CRESCENT_ARC / 2));
+    // 手裏剣のように自転しながら飛ぶ(初期角は fireCrescent で開口を後方に向けてある)
+    b.spinA += cs.spin * dt;
+    b.mesh.rotation.set(-Math.PI / 2, 0, b.spinA);
     // 月蝕: 刃の全面が敵弾を食う
     if (st.eclipse) eclipseEat(p, cs.radius * b.scaleMul + 0.22);
     b.tickT -= dt;

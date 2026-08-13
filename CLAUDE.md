@@ -188,7 +188,9 @@ GitHub Pages で公開する前提の、ビルド不要な単一 `index.html` �
     4枚とも**単体で成立**し、requires ゲートは使わない。揃うと役割が変わる創発コンボ):
     `crescent` 弦月の構え(epic。発射サイクル約1秒(`intervalMul` 2.6)、矢が三日月刃に。`crescentPool` + `updateCrescents()` で
     「触れている敵を `tickInterval` ごとに `tickMul` 倍で刻む」研削型。刃は合計 `life` ヒットで砕け、
-    **グレイズ成立で全刃の寿命 +1**(上限 `lifeMax`、`onGraze()` 内)。開口部は常に進行方向の逆)/
+    **グレイズ成立で全刃の寿命 +1**(上限 `lifeMax`、`onGraze()` 内)。見た目は三日月形シルエット
+    (`makeCrescentShape`)を縁取り・刃身・刃先の3層に重ねた刃のイラストで、
+    手裏剣のように自転しながら飛ぶ(自転速度は `spin`))/
     `broadhead` 大鏃(rare。単体: 矢の当たり判定 `hitMul` 倍。刃: `crescentScale` 倍に大きく
     `crescentSlow` 倍に遅く)/ `echo_head` 残響の鏃(epic。単体: 矢のヒット 0.2 秒後に 50% を
     もう一度 = 敵側の `echoT`/`echoDmg` に積んで `updateEnemy()` が鳴らす。刃: 刻み間隔が半分)/
