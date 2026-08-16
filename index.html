@@ -466,7 +466,7 @@ const CONFIG = {
     baseCount: 4,                   // ウェーブ1の敵数
     countPerWave: 2,                // ウェーブごとの追加数
     maxCount: 30,                   // 同時スポーン数の上限(終盤が画面外の物量勝負にならないように)
-    hpGrowth: 0.10,                 // 通常敵のHPがウェーブごとに増える割合(ボスは hpPerWave 側で伸ばす)
+    hpGrowth: 0.10,                 // 敵HPがウェーブごとに増える割合(ボスにも乗算。ボスはさらに hpPerWave の加算あり)
     bossEvery: 5,                   // 5ウェーブごとにボス
     clearHeal: 15,                  // ウェーブクリア時の回復量
     spawnMinDist: 10,               // プレイヤーからの最小スポーン距離
@@ -653,10 +653,10 @@ const ENEMY_TYPES = {
   },
   boss: {
     behavior: 'boss',
-    hp: 320, speed: 1.8, radius: 1.5,
+    hp: 720, speed: 1.8, radius: 1.5,
     color: 0xbb44ff, score: 1000, exp: 80,
     touchDamage: 20,
-    hpPerWave: 60,                  // 出現ウェーブ数に応じたHP加算
+    hpPerWave: 60,                  // ボス専用の追加成長(出現回数に応じた加算。hpGrowth の乗算はこの後に掛かる)
     attack: {
       pattern: 'radial', interval: 3.2,
       telegraph: 1.0,               // 赤リング予兆の時間(秒)
@@ -3136,12 +3136,12 @@ function spawnEnemy(typeName, waveNum) {
   mesh.position.copy(pos);
   scene.add(mesh);
 
-  // ボスは出現ウェーブ数に応じた加算、通常敵はウェーブごとの倍率で伸ばす。
+  // 全敵にウェーブごとの hpGrowth 倍率が乗る。ボスは出現回数に応じた hpPerWave の
+  // 加算を基礎値に足してから乗算(通常敵と同じ足並みで伸びないと終盤ボスが軽くなる)。
   // さらにチャプターの難易度倍率が全体に掛かる
   const ch = chapterDef();
-  const baseHp = isBoss
-    ? def.hp + (def.hpPerWave || 0) * (waveNum / CONFIG.wave.bossEvery - 1)
-    : def.hp * (1 + CONFIG.wave.hpGrowth * (waveNum - 1));
+  const bossBase = def.hp + (def.hpPerWave || 0) * (waveNum / CONFIG.wave.bossEvery - 1);
+  const baseHp = (isBoss ? bossBase : def.hp) * (1 + CONFIG.wave.hpGrowth * (waveNum - 1));
   const hp = Math.round(baseHp * ch.enemyHpMul);
   const useLaser = !!def.laser && waveNum >= def.laser.fromWave;
   const enemy = {

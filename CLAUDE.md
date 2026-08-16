@@ -65,7 +65,7 @@ GitHub Pages で公開する前提の、ビルド不要な単一 `index.html` �
     「このまま続ける」(`state.endless = true` にしてウェーブ上限なしで継続)と「タイトルへ」
   - `state.endless` 中は `isFinalWave()` が常に false になり、HUD も `WAVE n / 30` ではなく `WAVE n` になる
   - 難易度は 30 ウェーブぶんの長さに合わせてある: 通常敵の数は `wave.maxCount`(30)で頭打ち、
-    HP は `wave.hpGrowth`(ウェーブごと +10%)で伸ばす。ボスは従来どおり `hpPerWave` 側で伸びる
+    HP は `wave.hpGrowth`(ウェーブごと +10%)で伸ばす。ボスにも `hpGrowth` が乗算され、さらに出現回数に応じた `hpPerWave` の加算が基礎値に足される(乗算だけだと終盤ボスが通常ウェーブより軽くなるため)
   - **ウェーブクリアの判定は `damageEnemy()` の中にある**(`removeEnemy()` ではない)。
     テストで敵を消すときは `damageEnemy(e, 大きい数)` を使わないとウェーブが進まない
 - **ヒット・発射エフェクト**(数値は `CONFIG.fx`。攻撃の手応えを作る4点セット):
