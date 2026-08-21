@@ -555,6 +555,18 @@ const CONFIG = {
       ice:     { freeze: 1.0, cooldown: 2.5 },                  // 凍結(再凍結までの間隔つき)
       thunder: { pct: 0.4, radius: 3.5 },                       // 連鎖する電撃
       poison:  { tickEvery: 1, tickPct: 0.15 },                 // 毒(倒れるまで続く)
+      // 相乗効果(反応): 敵に付いている状態異常と別属性のヒットが噛み合うと発動。
+      // 属性はファミリーごとに別々に付くので「矢に炎・星に氷」のように揃えるほど強い。
+      // スキルゲートは無く、全反応が常時有効(創発コンボの流儀)
+      synergy: {
+        steam:     { pct: 1.5, radius: 2.5 },   // 蒸気爆発(炎×氷): 燃焼・凍結を消費して範囲爆発(基礎ダメ比)
+        ignite:    { ticks: 4, cooldown: 3 },   // 引火(炎×毒): 毒 ticks 秒分を即時に燃やす(敵ごとにCD)
+        conduct:   { radiusMul: 1.6, dmgMul: 1.5, freeze: 0.5 },  // 超電導(雷×氷): 連鎖が広く・痛く・連鎖先を短時間凍結
+        corrode:   { spreadPct: 1.0 },          // 毒電流(雷×毒): 連鎖先に毒を移す(本体の毒比)
+        flashfire: { spreadPct: 0.7 },          // 爆雷(雷×炎): 連鎖先に燃焼を移す(本体の燃焼比)
+        frostbite: { freezeMul: 1.5 },          // 凍毒(氷×毒): 毒の敵への凍結時間が伸びる
+        nameCd: 0.8,                            // 反応名ポップの敵ごとの最短間隔(連発で読めなくなるのを防ぐ)
+      },
     },
     boltPool: 12,                     // 落雷・連鎖の光柱エフェクトの数
   },
@@ -586,6 +598,7 @@ const CONFIG = {
     // 大きさも合わせて変えると、画面が数字だらけでも「いま効いた攻撃」が読み分けられる
     colors: { normal: '#ffffff', dot: '#ffd23e', crit: '#ffc94d' },
     scaleDot: 0.72, scaleCrit: 1.3, // dot / crit の数字の大きさ(normal 比)
+    scaleReaction: 0.9,             // 相乗効果の反応名(「蒸気爆発」など)の文字の大きさ(normal 比)
     tilt: 0.09,                     // 数字ごとのランダムな傾き(ラジアン。羅列の単調さを消す)
     outlineColor: '#20130a',        // 縁取り(明るい床の上でも読めるように)
     canvasW: 256, canvasH: 64, fontPx: 48,   // 文字を描くキャンバス(プール1要素につき1枚)
@@ -1848,15 +1861,20 @@ const dmgTextRight = new THREE.Vector3();
 // pos: ワールド座標 / up: そこから画面上へ逃がす距離 /
 // spread: 画面横方向にばらす幅(HPバーの上に数字が居座らないよう、バーの幅に応じて広げる)
 // kind: damageEnemy と同じ(undefined = 直撃 / 'crit' = 強化 / 'dot' = 継続系)
-function spawnDamageText(pos, amount, up, spread, kind) {
-  const C = CONFIG.damageText;
-  // 空きが無ければ一番古い(残り時間が最短の)ものを奪う。
-  // マルチショットの同時ヒットでも「出たはずの数字が出ない」ことがないように
+// 空きが無ければ一番古い(残り時間が最短の)ものを奪う。
+// マルチショットの同時ヒットでも「出たはずの数字が出ない」ことがないように
+function takeDmgText() {
   let item = null;
   for (const it of dmgTextPool) {
-    if (it.life <= 0) { item = it; break; }
+    if (it.life <= 0) return it;
     if (!item || it.life < item.life) item = it;
   }
+  return item;
+}
+
+function spawnDamageText(pos, amount, up, spread, kind) {
+  const C = CONFIG.damageText;
+  const item = takeDmgText();
   item.life = C.duration;
   item.scaleMul = kind === 'crit' ? C.scaleCrit : kind === 'dot' ? C.scaleDot : 1;
   item.tilt = (Math.random() * 2 - 1) * C.tilt;
@@ -1867,6 +1885,20 @@ function spawnDamageText(pos, amount, up, spread, kind) {
   item.base.copy(pos)
     .addScaledVector(dmgTextUp, up)
     .addScaledVector(dmgTextRight, (Math.random() * 2 - 1) * spread);
+  item.mesh.visible = true;
+}
+
+// エレメント相乗効果の反応名(「蒸気爆発」など)をふわっと出す。ダメージ数字のプールを使い回す。
+// 数字より高めに出して、同時に出るダメージ数字と重ならないようにする
+function spawnReactionText(pos, text, color) {
+  const C = CONFIG.damageText;
+  const item = takeDmgText();
+  item.life = C.duration;
+  item.scaleMul = C.scaleReaction;
+  item.tilt = 0;
+  drawDmgText(item, text, color);
+  dmgTextUp.set(0, 1, 0).applyQuaternion(camera.quaternion);
+  item.base.copy(pos).addScaledVector(dmgTextUp, 1.8);
   item.mesh.visible = true;
 }
 
@@ -2252,32 +2284,99 @@ const artColor = (elems, fallback) =>
 function applyElems(enemy, base, elems) {
   if (!elems || elems.length === 0) return;
   const E = CONFIG.arts.elements;
+  const SY = E.synergy;
   for (const el of elems) {
     if (el === 'fire') {
+      // 蒸気爆発(炎×氷): 凍結中の敵に炎 → 両状態を消費して範囲爆発(この回の燃焼付与も消費)
+      if (enemy.freezeT > 0) { steamBurst(enemy, base); continue; }
+      // 引火(炎×毒): 毒の敵に炎 → 毒 ticks 秒分を即時にまとめて燃やす(敵ごとのCDで連続ヒットの暴発を防ぐ)
+      if (enemy.poisonDmg > 0 && enemy.igniteCd <= 0) {
+        enemy.igniteCd = SY.ignite.cooldown;
+        enemy.synDmg += enemy.poisonDmg * SY.ignite.ticks;
+        enemy.synT = 0.05;
+        spawnReactionName(enemy, '引火', '#ffab52');
+      }
       enemy.burnT = E.fire.duration;
       enemy.burnDmg = Math.max(enemy.burnDmg, base * E.fire.tickPct);
     } else if (el === 'ice') {
+      // 蒸気爆発(氷側から): 燃焼中の敵に氷でも同じ反応
+      if (enemy.burnT > 0) { steamBurst(enemy, base); continue; }
       if (enemy.freezeCd <= 0) {
-        enemy.freezeT = E.ice.freeze;
+        // 凍毒(氷×毒): 毒の敵への凍結は長い
+        const mul = enemy.poisonDmg > 0 ? SY.frostbite.freezeMul : 1;
+        if (mul > 1) spawnReactionName(enemy, '凍毒', '#8ce3c4');
+        enemy.freezeT = E.ice.freeze * mul;
         enemy.freezeCd = E.ice.cooldown;
       }
     } else if (el === 'poison') {
       enemy.poisonDmg = Math.max(enemy.poisonDmg, base * E.poison.tickPct);
     } else if (el === 'thunder') {
-      chainLightning(enemy, base * E.thunder.pct);
+      chainLightning(enemy, base * E.thunder.pct);   // 雷系の反応は chainLightning が from の状態を見る
     }
   }
 }
 
+// 蒸気爆発(炎×氷): 燃焼・凍結を消費し、基礎ダメージ比の範囲爆発。
+// 周囲の敵は即時に殴るが、本体の分は synDmg に保留して updateEnemy で鳴らす —
+// applyElems は対象自身を殺さない不変条件(呼び出し側が直後に damageEnemy を呼ぶ)を守るため
+function steamBurst(enemy, base) {
+  const SY = CONFIG.arts.elements.synergy.steam;
+  enemy.freezeT = 0;
+  enemy.burnT = 0;
+  const dmg = base * SY.pct;
+  const pos = enemy.mesh.position;
+  spawnReactionName(enemy, '蒸気爆発', '#cfe8ff');
+  spawnGrazeFx(pos.x, pos.z, 2.6, 0xcfe8ff);
+  for (const other of enemies.slice()) {
+    if (other === enemy || !other.hpBar) continue;
+    if (other.mesh.position.distanceToSquared(pos) > SY.radius * SY.radius) continue;
+    damageEnemy(other, dmg, 'dot');
+  }
+  enemy.synDmg += dmg;
+  enemy.synT = 0.05;
+}
+
+// 反応名のポップ。連発すると読めないので敵ごとに間隔(synergy.nameCd)を空ける
+function spawnReactionName(enemy, text, color) {
+  if (enemy.synNameCd > 0) return;
+  enemy.synNameCd = CONFIG.arts.elements.synergy.nameCd;
+  spawnReactionText(enemy.mesh.position, text, color);
+}
+
 function chainLightning(from, dmg) {
-  const T = CONFIG.arts.elements.thunder;
+  const E = CONFIG.arts.elements;
+  const T = E.thunder, SY = E.synergy;
+  // 雷系の相乗効果: 撃った敵の状態異常が連鎖に乗る。
+  // 超電導(×氷)= 連鎖が広く・痛く・連鎖先を短時間凍結 / 毒電流(×毒)・爆雷(×炎)= 状態異常を連鎖先へ移す。
+  // 移した燃焼・毒は連鎖を呼ばないので無限連鎖はしない(連鎖ダメージ自体は従来どおり無属性)
+  const conduct = from.freezeT > 0;
+  const spreadPoison = from.poisonDmg > 0 ? from.poisonDmg * SY.corrode.spreadPct : 0;
+  const spreadBurn = from.burnT > 0 ? from.burnDmg * SY.flashfire.spreadPct : 0;
+  const radius = T.radius * (conduct ? SY.conduct.radiusMul : 1);
+  const mul = conduct ? SY.conduct.dmgMul : 1;
+  const color = conduct ? ELEM_COLORS.ice
+    : spreadPoison ? ELEM_COLORS.poison
+    : spreadBurn ? ELEM_COLORS.fire : ELEM_COLORS.thunder;
+  if (conduct) spawnReactionName(from, '超電導', '#a5e0ff');
+  else if (spreadPoison) spawnReactionName(from, '毒電流', '#b0f06a');
+  else if (spreadBurn) spawnReactionName(from, '爆雷', '#ffc46a');
   const pos = from.mesh.position;
   // damageEnemy が enemies を splice するのでスナップショットを回す
   for (const other of enemies.slice()) {
     if (other === from || !other.hpBar) continue;
-    if (other.mesh.position.distanceToSquared(pos) > T.radius * T.radius) continue;
-    spawnBolt(other.mesh.position.x, other.mesh.position.z, ELEM_COLORS.thunder, 0.5);
-    damageEnemy(other, dmg, 'dot');
+    if (other.mesh.position.distanceToSquared(pos) > radius * radius) continue;
+    spawnBolt(other.mesh.position.x, other.mesh.position.z, color, 0.5);
+    // 状態異常は殴る前に移す(damageEnemy が倒すと書き込み先が消えるため)
+    if (spreadPoison) other.poisonDmg = Math.max(other.poisonDmg, spreadPoison);
+    if (spreadBurn) {
+      other.burnT = E.fire.duration;
+      other.burnDmg = Math.max(other.burnDmg, spreadBurn);
+    }
+    if (conduct && other.freezeCd <= 0) {
+      other.freezeT = SY.conduct.freeze;
+      other.freezeCd = E.ice.cooldown;
+    }
+    damageEnemy(other, dmg * mul, 'dot');
   }
 }
 
@@ -3165,6 +3264,9 @@ function spawnEnemy(typeName, waveNum) {
     burnT: 0, burnTick: 0, burnDmg: 0,    // 燃焼: 残り時間 / 次のダメージまで / 1回分のダメージ
     freezeT: 0, freezeCd: 0,              // 凍結: 残り時間 / 再凍結までのクールダウン
     poisonTick: 0, poisonDmg: 0,          // 毒: 次のダメージまで / 毎秒のダメージ(0 なら未感染)
+    igniteCd: 0,                          // 引火(炎×毒)の再発動までのクールダウン
+    synT: 0, synDmg: 0,                   // 相乗効果の保留ダメージ(蒸気爆発・引火の本体分): 発火までの残り / 積まれた量
+    synNameCd: 0,                         // 反応名ポップの最短間隔タイマー
     echoT: 0, echoDmg: 0,                 // 残響の鏃: 発動までの残り / 積まれたダメージ
     swordMarks: 0, markGroup: null,       // 剣印の誓い: 刺さった剣の数 / その表示グループ(遅延生成)
     hitFlash: 0, hitSquash: 0,            // 被弾の白フラッシュ / ぷにっと潰れの残り時間
@@ -3245,6 +3347,18 @@ function updateEnemy(enemy, dt) {
   // 倒れたら removeEnemy 済み(hpBar が null)なので、以降の処理には入らない
   const E = CONFIG.arts.elements;
   if (enemy.freezeCd > 0) enemy.freezeCd -= dt;
+  if (enemy.igniteCd > 0) enemy.igniteCd -= dt;
+  if (enemy.synNameCd > 0) enemy.synNameCd -= dt;
+  // 相乗効果の保留ダメージ(蒸気爆発・引火の本体分。applyElems の最中に対象を殺さないための遅延)
+  if (enemy.synDmg > 0) {
+    enemy.synT -= dt;
+    if (enemy.synT <= 0) {
+      const d = enemy.synDmg;
+      enemy.synDmg = 0;
+      damageEnemy(enemy, d, 'dot');
+      if (!enemy.hpBar) return;           // 反応で倒れた
+    }
+  }
   if (enemy.burnT > 0) {
     enemy.burnT -= dt;
     enemy.burnTick += dt;
@@ -4231,6 +4345,15 @@ function renderDbgPower() {
     r += row('氷(凍結)', E.ice.freeze + ' 秒', '再凍結まで ' + E.ice.cooldown + ' 秒');
     r += row('雷(連鎖)', pct(E.thunder.pct), '半径 ' + E.thunder.radius + '(連鎖は無属性)');
     r += row('毒(スリップ)', pct(E.poison.tickPct) + ' / 秒', '倒れるまで続く');
+    // 相乗効果(状態異常×別属性ヒットで発動。全反応が常時有効)
+    const SY = E.synergy;
+    r += row('蒸気爆発(炎×氷)', pct(SY.steam.pct), '半径 ' + SY.steam.radius + ' の範囲爆発。燃焼・凍結を消費');
+    r += row('引火(炎×毒)', '毒 ' + SY.ignite.ticks + ' 秒分を即時', '敵ごとに ' + SY.ignite.cooldown + ' 秒CD');
+    r += row('超電導(雷×氷)', '連鎖 ×' + SY.conduct.dmgMul,
+      '半径 ×' + SY.conduct.radiusMul + '・連鎖先を ' + SY.conduct.freeze + ' 秒凍結');
+    r += row('毒電流(雷×毒)', pct(SY.corrode.spreadPct), '連鎖先に毒を移す(本体の毒比)');
+    r += row('爆雷(雷×炎)', pct(SY.flashfire.spreadPct), '連鎖先に燃焼を移す(本体の燃焼比)');
+    r += row('凍毒(氷×毒)', '凍結 ×' + SY.frostbite.freezeMul, '毒の敵への凍結時間が伸びる');
     const fam = (name, elems) => row(name + 'への付与',
       elems.length ? elems.map((e) => ELEM_JP[e]).join('・') : 'なし', '');
     r += fam('矢', st.arrowElems);
