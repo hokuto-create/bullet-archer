@@ -1471,6 +1471,7 @@ function spawnFromPool(pool, pos, dir, speed, damage) {
     b.life = 6;
     b.near = false;
     b.grazed = false;
+    b.eclipseImmune = false;          // 月蝕(刃)の確率抽選に外れた印。プールの使い回しで残さない
     b.pierce = 0;
     b.elems = null;
     b.crit = false;
@@ -1964,7 +1965,9 @@ const SKILLS = {
   crescent:  { icon: '🌙', name: '弦月の構え', desc: '発射に約1秒のチャージが要るようになるかわりに、矢が大きな三日月の刃になる。刃は触れている敵を55%で刻み続け、合計8ヒットで砕ける。グレイズするたび飛んでいる刃の寿命+1', max: 1, intervalMul: 2.6, tickMul: 0.55, tickInterval: 0.15, life: 8, lifeMax: 12, pierceLife: 8, speedMul: 0.4, spin: 7, radius: 1.5, flightTime: 4, rarity: 'epic' },
   broadhead: { icon: '🔶', name: '大鏃',       desc: '矢が一回り大きくなり当たりやすくなる。三日月刃はさらに大きく・ゆっくりになり、長く敵に触れる', max: 1, hitMul: 1.4, crescentScale: 1.35, crescentSlow: 0.8, rarity: 'rare' },
   echo_head: { icon: '🔔', name: '残響の鏃',   desc: '矢が当たった敵に0.2秒後、50%のダメージがもう一度響く。三日月刃は刻む速さが2倍になる', max: 1, ratio: 0.5, delay: 0.2, rarity: 'epic' },
-  eclipse:   { icon: '🌑', name: '月蝕', desc: '矢と三日月刃が敵弾に触れるとかき消す。かき消した1発ごとにグレイズが成立する', max: 1, rarity: 'legendary' },
+  // crescentEatChance: 三日月刃と組み合わせたときのかき消し確率。刃は面が広く触れっぱなしになるため、
+  // 100% だと弾幕がほぼ無力化されて強すぎる(矢は一瞬しか触れないので 100% のまま)
+  eclipse:   { icon: '🌑', name: '月蝕', desc: '矢が敵弾に触れるとかき消す。三日月刃は20%の確率でかき消す。かき消した1発ごとにグレイズが成立する', max: 1, crescentEatChance: 0.2, rarity: 'legendary' },
 
   // --- グレイズビルド「闘気の構え」: チャージを「消費する弾薬」から「維持するオーラ」に変える ---
   // 倍率は 1 + (強化ショット倍率 - 1) × チャージ数/上限。紙一重の妙・弾幕遊戯を取ると
@@ -3833,8 +3836,8 @@ function updateCrescents(dt) {
     // 手裏剣のように自転しながら飛ぶ(初期角は fireCrescent で開口を後方に向けてある)
     b.spinA += cs.spin * dt;
     b.mesh.rotation.set(-Math.PI / 2, 0, b.spinA);
-    // 月蝕: 刃の全面が敵弾を食う
-    if (st.eclipse) eclipseEat(p, cs.radius * b.scaleMul + 0.22);
+    // 月蝕: 刃の全面が敵弾を食う(触れっぱなしで強すぎるため確率制。矢は従来どおり100%)
+    if (st.eclipse) eclipseEat(p, cs.radius * b.scaleMul + 0.22, SKILLS.eclipse.crescentEatChance);
     b.tickT -= dt;
     if (b.tickT <= 0) {
       b.tickT = cs.tickInterval * (st.echo ? 0.5 : 1);        // 残響の鏃: 刻みが倍速に変質
@@ -3869,11 +3872,18 @@ function updateCrescents(dt) {
 
 // 月蝕: 中心 p・半径 r に入った敵弾をかき消し、1発ごとにグレイズ成立扱いにする
 // (チャージ加算・見切りの星・刃の寿命回復まで、通常のグレイズと同じ経路を通る)
-function eclipseEat(p, r) {
+// chance は弾1発ごとのかき消し確率(省略時 1)。毎フレーム抽選すると刃に触れ続けるだけで
+// 実質確率が跳ね上がるため、外れた弾には `eclipseImmune` を立てて以後は食わない
+// (= 20% は「その弾を消せるかどうか」の1回きりの抽選)
+function eclipseEat(p, r, chance = 1) {
   for (const eb of bulletPool) {
     if (!eb.active) continue;
     const dx = eb.mesh.position.x - p.x, dz = eb.mesh.position.z - p.z;
     if (dx * dx + dz * dz >= r * r) continue;
+    if (chance < 1) {
+      if (eb.eclipseImmune) continue;
+      if (Math.random() >= chance) { eb.eclipseImmune = true; continue; }
+    }
     spawnFlash(eb.mesh.position.x, 0.5, eb.mesh.position.z, CONFIG.fx.muzzle.size * 0.7, 0xcfe8ff);
     const owner = eb.owner;
     deactivate(eb);
@@ -4227,7 +4237,7 @@ function renderDbgPower() {
     r += row('グレイズ判定半径', fmt(CONFIG.graze.outerRadius * st.grazeRange),
       st.grazeRange > 1 ? '弾幕遊戯 ×' + st.grazeRange : '基礎 ' + CONFIG.graze.outerRadius);
     r += row('月蝕', st.eclipse ? '有効' : '—',
-      st.eclipse ? '自弾が敵弾をかき消してグレイズ化' : NA);
+      st.eclipse ? '自弾が敵弾をかき消してグレイズ化(三日月刃は' + Math.round(SKILLS.eclipse.crescentEatChance * 100) + '%)' : NA);
     r += row('燕返しの矢', st.grazeArrow ? fmt(dmg) + ' / 発' : '—',
       st.grazeArrow
         ? 'グレイズ成立で反撃(' + st.grazeArrow.cooldown + '秒に1回。最大DPS ' + fmt(dmg / st.grazeArrow.cooldown) + ')'
