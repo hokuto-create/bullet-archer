@@ -53,8 +53,13 @@ GitHub Pages で公開する前提の、ビルド不要な単一 `index.html` �
   - 見た目も `floorColor` / `wallColor` / `wallEmissive` で変わる(`applyChapterVisual()`。
     床と壁のマテリアルの色を書き換えるだけで、ジオメトリは作り直さない)
   - **解放状況は localStorage**(キー `bulletArcher.cleared`、クリア済みチャプター数)。
-    読み書きは try/catch(プライベートモード対策)。タイトルは `renderChapterSelect()` が
-    チャプター選択ボタンを生成し、未解放は 🔒 表示で `disabled`
+    読み書きは try/catch(プライベートモード対策)。タイトルはアーチャー伝説2風の
+    **島マップ**: `renderChapterSelect()` がチャプターごとの島ノード(CSS だけで描いた
+    砂浜+植生。色は `CONFIG.chapters` の `isleLeaf`/`isleLeafHi`)を縦に積む
+    (チャプター1が最下段、DOM は逆順生成)。島をタップで `selectedChapter` を選び、
+    下段の「開始」ボタン(`#start-btn`)で `startGame(selectedChapter)`。
+    未解放は 🔒 バッジ+グレースケールで `disabled`、クリア済みは金の★3。
+    既定の選択は「次に挑むチャプター」で、選択中の島は白波が光って浮き沈みする
   - ウェーブクリア後の行き先は `advanceWave()` 一本に集約。`onWaveClear()` の `setTimeout` と
     `closeLevelUp()`(選択中に来たクリアの保留分)の両方がここを通るので、
     「最終ウェーブなら `chapterClear()`」の判定は1か所で済む
