@@ -312,11 +312,27 @@
     background: radial-gradient(circle at 35% 28%, var(--leaf-hi), var(--leaf) 72%);
     box-shadow: 0 3px 6px rgba(0,30,60,0.25);
   }
-  .isle-b1 { width: 74px; height: 50px; left: 26px; bottom: 22px; }
-  .isle-b2 { width: 62px; height: 44px; right: 32px; bottom: 26px; }
-  .isle-b3 { width: 52px; height: 40px; left: 70px; bottom: 44px; }
-  .isle-b4 { width: 36px; height: 26px; left: 12px; bottom: 40px; }
-  .isle-b5 { width: 32px; height: 24px; right: 18px; bottom: 44px; }
+  .isle-b1 { width: 40px; height: 28px; left: 24px; bottom: 16px; }
+  .isle-b2 { width: 34px; height: 24px; right: 26px; bottom: 20px; }
+  /* ローポリ風の松の木: 段々の樹冠(clip-path の一枚シルエット)+幹。
+     clip-path は疑似要素ごと切り抜くため、幹は兄弟要素にしてラッパーで束ねる */
+  .isle-tree { position: absolute; }
+  .tree-top {
+    position: absolute; left: 0; right: 0; top: 0; bottom: 12%;
+    background: linear-gradient(180deg, var(--leaf-hi), var(--leaf) 85%);
+    clip-path: polygon(50% 0%, 66% 20%, 57% 20%, 78% 48%, 65% 48%,
+                       95% 100%, 5% 100%, 35% 48%, 22% 48%, 43% 20%, 34% 20%);
+    filter: drop-shadow(0 3px 4px rgba(0,30,60,0.3));
+  }
+  .tree-trunk {
+    position: absolute; left: 50%; bottom: 0; width: 14%; height: 16%;
+    transform: translateX(-50%);
+    background: linear-gradient(180deg, #b5744f, #8e5537);
+    border-radius: 3px 3px 4px 4px;
+  }
+  .isle-t1 { width: 64px; height: 92px; left: 62px; bottom: 32px; }
+  .isle-t2 { width: 46px; height: 66px; left: 112px; bottom: 26px; }
+  .isle-t3 { width: 38px; height: 54px; left: 32px; bottom: 24px; }
   .chapter-node.locked .c-isle { filter: grayscale(0.85) brightness(0.75); }
   /* 選択中の島: 白波が金色に光り、ゆっくり浮き沈みする */
   .chapter-node.selected .c-isle { animation: isle-float 2.6s ease-in-out infinite; }
@@ -4065,8 +4081,10 @@ function renderChapterSelect() {
       '</span>' +
       '<div class="c-isle" style="--leaf:' + ch.isleLeaf + ';--leaf-hi:' + ch.isleLeafHi + '">' +
         '<div class="isle-sand"></div>' +
-        '<div class="isle-bush isle-b1"></div><div class="isle-bush isle-b2"></div><div class="isle-bush isle-b3"></div>' +
-        '<div class="isle-bush isle-b4"></div><div class="isle-bush isle-b5"></div>' +
+        '<div class="isle-tree isle-t3"><div class="tree-top"></div><div class="tree-trunk"></div></div>' +
+        '<div class="isle-tree isle-t1"><div class="tree-top"></div><div class="tree-trunk"></div></div>' +
+        '<div class="isle-tree isle-t2"><div class="tree-top"></div><div class="tree-trunk"></div></div>' +
+        '<div class="isle-bush isle-b1"></div><div class="isle-bush isle-b2"></div>' +
       '</div>' +
       '<span class="c-stars">' + (cleared ? '<span class="on">★★★</span>' : '★★★') + '</span>';
     if (unlocked) btn.addEventListener('click', () => selectChapter(i));

@@ -55,7 +55,8 @@ GitHub Pages で公開する前提の、ビルド不要な単一 `index.html` �
   - **解放状況は localStorage**(キー `bulletArcher.cleared`、クリア済みチャプター数)。
     読み書きは try/catch(プライベートモード対策)。タイトルはアーチャー伝説2風の
     **島マップ**: `renderChapterSelect()` がチャプターごとの島ノード(CSS だけで描いた
-    砂浜+植生。色は `CONFIG.chapters` の `isleLeaf`/`isleLeafHi`)を縦に積む
+    砂浜+ローポリ風の段々の松3本(clip-path の一枚シルエット+幹)+茂み。
+    葉の色は `CONFIG.chapters` の `isleLeaf`/`isleLeafHi`)を縦に積む
     (チャプター1が最下段、DOM は逆順生成)。島をタップで `selectedChapter` を選び、
     下段の「開始」ボタン(`#start-btn`)で `startGame(selectedChapter)`。
     未解放は 🔒 バッジ+グレースケールで `disabled`、クリア済みは金の★3。
