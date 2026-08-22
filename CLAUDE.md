@@ -147,6 +147,32 @@ GitHub Pages で公開する前提の、ビルド不要な単一 `index.html` �
     予兆〜発射の間は敵も足を止める(動くと線と実際のビームがずれるため)。
     ビームの縁(`graze.outerRadius` の帯)を通るとレーザー1本につき1回グレイズできる。
     ビームは「地面に寝かせた 1x1 の面」を位置・`scale`・`rotation.z` で伸ばして描いている
+- **装備システム(6部位)**(数値は `CONFIG.equip`、定義は `EQUIP_SLOTS` / `EQUIP_ITEMS`。データ駆動で、
+  アイテムを増やすときは `EQUIP_ITEMS` にオブジェクトを足す): ラン外のメタ進行。
+  タイトルの「装備」「ガチャ」画面で完結し、ラン中は変更不可
+  - 部位は 武器(攻撃%)/ 兜(最大HP)/ 鎧(被ダメ軽減+高レアはHPも)/ 靴(移動%)/
+    指輪(攻撃速度%)/ お守り(召喚% or 強化ショット倍率加算)。各部位×4レアリティ = 24種。
+    レアリティはアイテム固定で、色・ラベルは `CONFIG.level.rarity` を共用(ガチャ重みだけ `CONFIG.equip.gacha.weights`)
+  - 入手はガチャ(コイン 1回100 / 10連900)。コインは通常ウェーブクリア +10 / ボスウェーブ +40 /
+    チャプタークリア +`chapters[].coinBonus`。**付与(`addCoins()`)のたび即セーブ**するので
+    ゲームオーバーでもラン中の獲得分は残る(`state.runCoins` はリザルト表示用の集計)
+  - 被りはその装備専用の強化素材に自動変換(`items[id].mat`)。強化は Lv n→n+1 で
+    「素材 `matPerLv` + コイン `coinPerLv`×n」、実効値は基礎値 ×(1 + `growthPerLv`×(Lv−1))、
+    上限Lvはレアリティ別 `lvCap`。計算は `itemStatAt()` / `upgradeCost()` に集約
+  - **ステータス反映は一方通行**: 装備の変更・強化・ロード時に `recomputeEquipStats()` が
+    `equipStats`(atkMul/rateMul/spdMul/summonMul/grazeFlat/hpBonus/dmgCut)を作り直し、
+    末尾で `recomputeSkillStats()` を呼んで `level.stats` に焼き込む。装備なしなら全て恒等値で既存挙動と一致。
+    最大HPは `resetPlayer()` が `CONFIG.player.maxHp + equipStats.hpBonus` で反映(`vital` はその上に加算)。
+    被ダメ軽減は `damagePlayer()` で `level.stats.dmgCut` を掛け、最低1ダメージは必ず通す(不死身防止)
+  - 保存は localStorage キー `bulletArcher.equip`(バージョン付きJSON
+    `{v:1, coins, items:{id:{lv,mat}}, equipped:{slot:id}}`)。読み込みは try/catch +
+    検証(未知id読み捨て・lv clamp・スロット不一致の装備解除)で壊れたデータでも初期状態で起動する
+  - UI はタイトルから `#equip-screen` / `#gacha-screen` を display 切替で開く(`state.phase` は
+    'title' のまま。新しい phase は増やさない)。カードの枠色は CSS 変数 `--rc`、
+    ガチャ結果の出現はスキル3択の `card-in` を流用。装備画面は6スロットグリッド+
+    選択スロットの所持品リスト(装備・強化ボタン)
+  - 開発パネルの火力表(`renderDbgPower()`)冒頭に装備欄あり。装備タブでコイン付与・全装備付与・
+    セーブ初期化ができる(いずれも `[DEBUG]` 区画)
 - **レベル・スキルシステム**(アーチャー伝説方式。数値は `CONFIG.level` / `SKILLS` に集約)
   - 敵撃破で `def.exp` の経験値。必要量は `baseExp` からレベルごとに `expGrowth` 倍。
     HUD のグレイズゲージの下に緑の EXP バーと Lv 表示
@@ -313,7 +339,7 @@ GitHub Pages で公開する前提の、ビルド不要な単一 `index.html` �
 
 1. **単一 HTML 維持** — ビルドツール・npm・モジュールバンドラは使わない。すべて `index.html` 内に記述
 2. **セクションコメントで区画分け** — `index.html` 内は以下の順で `// ====` コメントにより区画されている。変更時はこの構造を維持する:
-   定数 (`CONFIG`) / 敵定義 (`ENEMY_TYPES`) / 弾幕パターン (`BULLET_PATTERNS`) / シーン初期化 / プレイヤー / 弾・プール / ヒット・発射エフェクト / グレイズ・強化ショット / ダメージ数値表示 / レベル・スキル (`SKILLS`) / 召喚攻撃(星・霊剣・守護者)・エレメント / 敵 / ウェーブ管理 / 入力 / ゲームループ / UI同期・画面遷移
+   定数 (`CONFIG`) / 敵定義 (`ENEMY_TYPES`) / 弾幕パターン (`BULLET_PATTERNS`) / シーン初期化 / プレイヤー / 弾・プール / ヒット・発射エフェクト / グレイズ・強化ショット / ダメージ数値表示 / 装備システム (`EQUIP_SLOTS` `EQUIP_ITEMS`) / レベル・スキル (`SKILLS`) / 召喚攻撃(星・霊剣・守護者)・エレメント / 敵 / ウェーブ管理 / 入力 / ゲームループ / UI同期・画面遷移
 3. **データ駆動の敵・弾幕定義** — 敵の追加は `ENEMY_TYPES` にオブジェクトを足す。弾幕パターンの追加は `BULLET_PATTERNS` に「方向ベクトル配列を返す関数」を足し、敵定義の `attack.pattern` から名前で参照する
 4. **オブジェクトプール** — 矢・敵弾は `makePool` によるプールで管理。フレーム中の new を避ける
 5. 数値バランスは `CONFIG` に集約する
