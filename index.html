@@ -209,17 +209,16 @@
     padding: env(safe-area-inset-top) 20px env(safe-area-inset-bottom);
   }
   #title-main {
-    font-size: clamp(38px, 10vw, 72px);
+    font-size: clamp(26px, 7vw, 46px);
     font-weight: 900; letter-spacing: 0.06em;
     color: #ffd76a;
     text-shadow: 0 0 24px rgba(255,150,0,0.55), 0 3px 0 #7a4a00;
   }
   #title-sub {
-    font-size: clamp(16px, 4vw, 26px);
-    color: #9fc4ff; letter-spacing: 0.3em;
-    margin: 10px 0 40px;
+    font-size: clamp(13px, 3.4vw, 20px);
+    color: #e2f2ff; letter-spacing: 0.3em;
+    margin: 4px 0 0;
   }
-  .screen p.desc { color: #aab; font-size: 14px; line-height: 1.9; margin-bottom: 34px; }
   .btn {
     font-size: 20px; font-weight: bold;
     color: #10142a; background: linear-gradient(180deg, #ffd76a, #f0a830);
@@ -250,26 +249,115 @@
     box-shadow: 0 4px 18px rgba(0,0,0,0.45);
   }
 
-  /* ---- タイトルのチャプター選択 ---- */
+  /* ---- タイトル = チャプターマップ画面 ----
+     アーチャー伝説2風の「海に浮かぶ島マップ」。チャプター1が最下段で、
+     クリアするほど上の島へ航路(点線)が続く。島をタップで選択し、
+     下段の大きな「開始」ボタンで出撃する */
+  #title-screen {
+    justify-content: flex-start; padding: 0;
+    background:
+      radial-gradient(ellipse at 50% -10%, rgba(170,225,255,0.4), rgba(0,0,0,0) 55%),
+      linear-gradient(180deg, #46a0e6 0%, #2377c8 45%, #14509e 100%);
+  }
+  #title-head { flex: none; width: 100%; padding: calc(env(safe-area-inset-top) + 14px) 20px 2px; }
+  /* 島マップ本体。チャプターが増えたら縦にスクロールする */
+  #chapter-map {
+    flex: 1; width: 100%; min-height: 0;
+    overflow-y: auto; -webkit-overflow-scrolling: touch;
+  }
   #chapter-select {
-    display: flex; flex-direction: column; gap: 12px;
-    width: min(86vw, 340px);
+    display: flex; flex-direction: column; align-items: center;
+    width: 100%; padding: 16px 0 24px;
   }
-  .chapter-btn {
-    display: flex; flex-direction: column; align-items: center; gap: 4px;
-    font-family: inherit; cursor: pointer;
-    color: #10142a; background: linear-gradient(180deg, #ffd76a, #f0a830);
-    border: none; border-radius: 16px; padding: 14px 20px;
-    box-shadow: 0 4px 18px rgba(255,170,0,0.4);
+  .chapter-node {
+    position: relative; display: flex; flex-direction: column; align-items: center; gap: 3px;
+    background: none; border: none; padding: 8px 24px; cursor: pointer;
+    font-family: inherit; color: #fff;
   }
-  .chapter-btn:active { transform: scale(0.97); }
-  .chapter-btn .c-name { font-size: 20px; font-weight: 900; letter-spacing: 0.08em; }
-  .chapter-btn .c-sub { font-size: 12px; }
-  .chapter-btn.locked {
-    color: #8892b0; background: linear-gradient(180deg, #2a3050, #1a2038);
-    box-shadow: none; cursor: default;
+  .chapter-node:active { transform: scale(0.97); }
+  /* 上の島へ続く航路の点線(縦に並んだノードの間) */
+  .chapter-node + .chapter-node::before {
+    content: ''; width: 0; height: 30px; margin-bottom: 8px;
+    border-left: 5px dotted rgba(255,255,255,0.55);
   }
-  .chapter-btn.locked:active { transform: none; }
+  .c-head { display: flex; align-items: center; gap: 10px; }
+  .c-badge {
+    min-width: 42px; height: 42px; padding: 0 8px; border-radius: 12px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 22px; font-weight: 900; color: #fff;
+    background: linear-gradient(180deg, #5f8fd8, #2c4f96);
+    border: 2px solid rgba(255,255,255,0.75);
+    box-shadow: 0 3px 8px rgba(0,20,60,0.4);
+    text-shadow: 0 2px 0 rgba(0,0,0,0.3);
+  }
+  .chapter-node.cleared .c-badge { background: linear-gradient(180deg, #ffd76a, #e09020); text-shadow: 0 2px 0 #7a4a00; }
+  .c-name {
+    font-size: clamp(22px, 6vw, 30px); font-weight: 900; letter-spacing: 0.04em;
+    text-shadow: 0 2px 0 rgba(10,40,90,0.6), 0 0 12px rgba(0,40,100,0.4);
+  }
+  .c-sub { font-size: 13px; color: #dcefff; text-shadow: 0 1px 0 rgba(10,40,90,0.5); }
+  .c-status { font-size: 14px; font-weight: bold; color: #ffe07a; text-shadow: 0 1px 2px rgba(120,70,0,0.6); }
+  .chapter-node.locked .c-status { color: #cfe0f2; text-shadow: 0 1px 2px rgba(10,40,90,0.5); }
+  /* 島のイラスト(CSSだけで描く: 白波リング付きの砂浜+植生の丸3つ)。
+     植生の色はチャプター定義の isleLeaf / isleLeafHi を CSS 変数で受ける */
+  .c-isle { position: relative; width: 190px; height: 116px; margin-top: 2px; }
+  .isle-sand {
+    position: absolute; left: 50%; bottom: 4px; transform: translateX(-50%);
+    width: 170px; height: 62px; border-radius: 50%;
+    background: radial-gradient(ellipse at 50% 30%, #ecd39a, #c9a05e 75%);
+    box-shadow: 0 0 0 7px rgba(255,255,255,0.5), 0 0 26px 12px rgba(255,255,255,0.22);
+  }
+  .isle-bush {
+    position: absolute; border-radius: 50%;
+    background: radial-gradient(circle at 35% 28%, var(--leaf-hi), var(--leaf) 72%);
+    box-shadow: 0 3px 6px rgba(0,30,60,0.25);
+  }
+  .isle-b1 { width: 40px; height: 28px; left: 24px; bottom: 16px; }
+  .isle-b2 { width: 34px; height: 24px; right: 26px; bottom: 20px; }
+  /* ローポリ風の松の木: 段々の樹冠(clip-path の一枚シルエット)+幹。
+     clip-path は疑似要素ごと切り抜くため、幹は兄弟要素にしてラッパーで束ねる */
+  .isle-tree { position: absolute; }
+  .tree-top {
+    position: absolute; left: 0; right: 0; top: 0; bottom: 12%;
+    background: linear-gradient(180deg, var(--leaf-hi), var(--leaf) 85%);
+    clip-path: polygon(50% 0%, 66% 20%, 57% 20%, 78% 48%, 65% 48%,
+                       95% 100%, 5% 100%, 35% 48%, 22% 48%, 43% 20%, 34% 20%);
+    filter: drop-shadow(0 3px 4px rgba(0,30,60,0.3));
+  }
+  .tree-trunk {
+    position: absolute; left: 50%; bottom: 0; width: 14%; height: 16%;
+    transform: translateX(-50%);
+    background: linear-gradient(180deg, #b5744f, #8e5537);
+    border-radius: 3px 3px 4px 4px;
+  }
+  .isle-t1 { width: 64px; height: 92px; left: 62px; bottom: 32px; }
+  .isle-t2 { width: 46px; height: 66px; left: 112px; bottom: 26px; }
+  .isle-t3 { width: 38px; height: 54px; left: 32px; bottom: 24px; }
+  .chapter-node.locked .c-isle { filter: grayscale(0.85) brightness(0.75); }
+  /* 選択中の島: 白波が金色に光り、ゆっくり浮き沈みする */
+  .chapter-node.selected .c-isle { animation: isle-float 2.6s ease-in-out infinite; }
+  .chapter-node.selected .isle-sand {
+    box-shadow: 0 0 0 7px rgba(255,255,255,0.8), 0 0 32px 14px rgba(255,235,150,0.55);
+  }
+  @keyframes isle-float {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-6px); }
+  }
+  .c-stars { font-size: 20px; letter-spacing: 0.2em; color: rgba(10,40,90,0.4); }
+  .c-stars .on { color: #ffd23e; text-shadow: 0 1px 0 #9a6a00, 0 0 8px rgba(255,200,60,0.7); }
+  /* 下段の出撃バー */
+  #title-foot {
+    flex: none; width: 100%; display: flex; flex-direction: column; align-items: center; gap: 8px;
+    padding: 12px 20px calc(env(safe-area-inset-bottom) + 14px);
+    background: linear-gradient(180deg, rgba(8,24,52,0), rgba(8,24,52,0.6));
+  }
+  #start-btn {
+    width: min(80vw, 340px); border-radius: 18px; padding: 12px;
+    display: flex; flex-direction: column; align-items: center; gap: 2px;
+    font-size: 26px;
+  }
+  #start-btn .b-sub { font-size: 13px; font-weight: bold; opacity: 0.85; }
+  #title-hint { font-size: 11px; color: #cfe6ff; line-height: 1.7; text-align: center; }
 
   /* ===== [DEBUG] スキル自由取得(使用感テスト用。リリース時にこのブロックを削除) ===== */
   #dbg-skill-btn {
@@ -398,16 +486,18 @@
 </div>
 
 <div id="title-screen" class="screen">
-  <div id="title-main">BULLET ARCHER</div>
-  <div id="title-sub">〜弾幕の射手〜</div>
-  <p class="desc">
-    移動: WASD / 矢印キー / 仮想ジョイスティック<br>
-    立ち止まると最寄りの敵を自動攻撃!<br>
-    敵弾を<b>かすめる</b>(グレイズ)と次の攻撃が<b>2倍</b>に!<br>
-    敵を倒して経験値ゲット!レベルアップでスキルを選ぼう<br>
-    <b>全30ウェーブ</b>を勝ち抜けばチャプタークリア!次のチャプターが解放される
-  </p>
-  <div id="chapter-select"></div>
+  <div id="title-head">
+    <div id="title-main">BULLET ARCHER</div>
+    <div id="title-sub">〜弾幕の射手〜</div>
+  </div>
+  <div id="chapter-map"><div id="chapter-select"></div></div>
+  <div id="title-foot">
+    <button id="start-btn" class="btn"><span>開始</span><span class="b-sub" id="start-btn-sub"></span></button>
+    <p id="title-hint">
+      移動: WASD / 矢印キー / 仮想ジョイスティック ・ 立ち止まると自動攻撃!<br>
+      敵弾を<b>かすめる</b>(グレイズ)と次の攻撃が強化 ・ <b>全30ウェーブ</b>でチャプタークリア
+    </p>
+  </div>
 </div>
 
 <div id="gameover-screen" class="screen">
@@ -482,6 +572,7 @@ const CONFIG = {
       hpBonus: 20,                  // 残HP1につき加算するスコア(粘り勝ちを評価する)
       enemyHpMul: 1, enemySpeedMul: 1, bulletSpeedMul: 1,
       floorColor: 0x1a1f33, wallColor: 0x3355aa, wallEmissive: 0x112244,
+      isleLeaf: '#2f9e50', isleLeafHi: '#8fd985',   // タイトルの島マップの植生色
     },
     {
       waves: 30, name: 'CHAPTER 2', subtitle: '〜 紅蓮の戦場 〜',
@@ -489,6 +580,7 @@ const CONFIG = {
       hpBonus: 30,
       enemyHpMul: 1.6, enemySpeedMul: 1.15, bulletSpeedMul: 1.2,
       floorColor: 0x2c1520, wallColor: 0xaa3355, wallEmissive: 0x441122,
+      isleLeaf: '#b8433f', isleLeafHi: '#ef9463',   // 紅蓮: 燃えるような赤い植生
     },
   ],
   // グレイズ: 敵弾を「当たらないギリギリ」で通したときの判定と演出
@@ -3953,6 +4045,7 @@ const ccStats = document.getElementById('cc-stats');
 const nextBtn = document.getElementById('next-btn');
 const chapterLabel = document.getElementById('chapter-label');
 const chapterSelectEl = document.getElementById('chapter-select');
+const startBtnSub = document.getElementById('start-btn-sub');
 
 // チャプターの解放状況(クリア済みチャプター数)。localStorage が使えない環境では実行中だけ保持
 const PROGRESS_KEY = 'bulletArcher.cleared';
@@ -3964,20 +4057,59 @@ function saveProgress() {
   try { localStorage.setItem(PROGRESS_KEY, clearedChapters); } catch (e) { /* 保存できなくても続行 */ }
 }
 
-// タイトルのチャプター選択。クリア済みの次のチャプターまで解放される
+// タイトルのチャプターマップ。クリア済みの次のチャプターまで解放される。
+// アーチャー伝説2風の島マップ: チャプター1の島が最下段で、後のチャプターほど上に
+// 積み上がる(DOM は逆順で生成)。島をタップで選択し、下段の「開始」ボタンで出撃。
+// 既定の選択は「次に挑むチャプター」(全クリア後は最終チャプター)
+let selectedChapter = 0;
 function renderChapterSelect() {
+  selectedChapter = Math.min(clearedChapters, CONFIG.chapters.length - 1);
   chapterSelectEl.innerHTML = '';
-  CONFIG.chapters.forEach((ch, i) => {
+  for (let i = CONFIG.chapters.length - 1; i >= 0; i--) {
+    const ch = CONFIG.chapters[i];
     const unlocked = i <= clearedChapters;
+    const cleared = i < clearedChapters;
     const btn = document.createElement('button');
-    btn.className = 'chapter-btn' + (unlocked ? '' : ' locked');
-    btn.innerHTML = unlocked
-      ? '<span class="c-name">' + ch.name + '</span><span class="c-sub">' + ch.subtitle + '</span>'
-      : '<span class="c-name">🔒 ' + ch.name + '</span><span class="c-sub">' + CONFIG.chapters[i - 1].name + ' をクリアで解放</span>';
-    if (unlocked) btn.addEventListener('click', () => startGame(i));
+    btn.className = 'chapter-node' + (unlocked ? '' : ' locked') + (cleared ? ' cleared' : '');
+    btn.dataset.chapter = i;
+    btn.innerHTML =
+      '<div class="c-head"><span class="c-badge">' + (unlocked ? (i + 1) : '🔒') + '</span>' +
+      '<span class="c-name">' + ch.name + '</span></div>' +
+      '<span class="c-sub">' + ch.subtitle + '</span>' +
+      '<span class="c-status">' +
+        (cleared ? 'クリア済み' : unlocked ? '挑戦できる!' : CONFIG.chapters[i - 1].name + ' をクリアで解放') +
+      '</span>' +
+      '<div class="c-isle" style="--leaf:' + ch.isleLeaf + ';--leaf-hi:' + ch.isleLeafHi + '">' +
+        '<div class="isle-sand"></div>' +
+        '<div class="isle-tree isle-t3"><div class="tree-top"></div><div class="tree-trunk"></div></div>' +
+        '<div class="isle-tree isle-t1"><div class="tree-top"></div><div class="tree-trunk"></div></div>' +
+        '<div class="isle-tree isle-t2"><div class="tree-top"></div><div class="tree-trunk"></div></div>' +
+        '<div class="isle-bush isle-b1"></div><div class="isle-bush isle-b2"></div>' +
+      '</div>' +
+      '<span class="c-stars">' + (cleared ? '<span class="on">★★★</span>' : '★★★') + '</span>';
+    if (unlocked) btn.addEventListener('click', () => selectChapter(i));
     else btn.disabled = true;
     chapterSelectEl.appendChild(btn);
+  }
+  applyChapterSelection();
+}
+
+function selectChapter(i) {
+  selectedChapter = i;
+  applyChapterSelection();
+}
+
+// 選択状態の見た目と開始ボタンのラベルを同期し、選択中の島を画面中央へスクロール
+function applyChapterSelection() {
+  let selNode = null;
+  chapterSelectEl.querySelectorAll('.chapter-node').forEach(n => {
+    const on = +n.dataset.chapter === selectedChapter;
+    n.classList.toggle('selected', on);
+    if (on) selNode = n;
   });
+  const ch = CONFIG.chapters[selectedChapter];
+  startBtnSub.textContent = ch.name + ' ' + ch.subtitle;
+  if (selNode) selNode.scrollIntoView({ block: 'center' });
 }
 
 function updateHud() {
@@ -4693,6 +4825,7 @@ function goTitle() {
   titleScreen.style.display = 'flex';
 }
 
+document.getElementById('start-btn').addEventListener('click', () => startGame(selectedChapter));
 document.getElementById('retry-btn').addEventListener('click', () => startGame(state.chapter));
 nextBtn.addEventListener('click', () => startGame(state.chapter + 1));
 document.getElementById('endless-btn').addEventListener('click', continueEndless);
