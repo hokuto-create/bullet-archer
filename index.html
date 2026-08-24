@@ -361,11 +361,17 @@
   #title-hint { font-size: 11px; color: #cfe6ff; line-height: 1.7; text-align: center; }
   .coin-label { font-size: 15px; font-weight: bold; color: #ffe07a; text-shadow: 0 1px 2px rgba(120,70,0,0.6); }
 
-  /* ==== 装備・ガチャ画面と下部タブバー ====
-     タイトル系画面(戦闘=チャプターマップ / 装備 / ガチャ)は下部の常設タブバーで
+  /* ==== 装備・ショップ画面と下部タブバー ====
+     タイトル系画面(戦闘=チャプターマップ / 装備 / ショップ(ガチャ))は下部の常設タブバーで
      即切替する(state.phase は 'title' のまま)。レアリティ色はスキルカードと
      同じく CSS 変数 --rc で流し込む */
-  #equip-screen, #gacha-screen { display: none; justify-content: flex-start; padding: 0; }
+  #equip-screen, #shop-screen { display: none; justify-content: flex-start; padding: 0; }
+  /* ショップ内のセクション見出し(ガチャ・将来のアイテム販売などを縦に積む) */
+  .shop-sec {
+    width: 100%; max-width: 520px; text-align: left;
+    font-size: 16px; font-weight: 900; color: #ffd76a;
+    border-bottom: 1px solid rgba(255,215,106,0.35); padding-bottom: 6px;
+  }
   .meta-head {
     flex: none; width: 100%; display: flex; align-items: center; gap: 12px;
     padding: calc(env(safe-area-inset-top) + 12px) 16px 10px;
@@ -648,12 +654,13 @@
   <div id="equip-list"></div>
 </div>
 
-<div id="gacha-screen" class="screen">
+<div id="shop-screen" class="screen">
   <div class="meta-head">
-    <span class="m-title">🎰 ガチャ</span>
-    <span id="gacha-coins" class="coin-label"></span>
+    <span class="m-title">🏪 ショップ</span>
+    <span id="shop-coins" class="coin-label"></span>
   </div>
   <div id="gacha-body">
+    <div class="shop-sec">🎰 装備ガチャ</div>
     <div id="gacha-btns">
       <button id="gacha-pull1" class="btn"></button>
       <button id="gacha-pull10" class="btn sub"></button>
@@ -5188,7 +5195,7 @@ function startGame(chapterIndex) {
   resetFx();
   titleScreen.style.display = 'none';
   equipScreen.style.display = 'none';
-  gachaScreen.style.display = 'none';
+  shopScreen.style.display = 'none';
   titleTabbar.style.display = 'none';
   gameoverScreen.style.display = 'none';
   levelupScreen.style.display = 'none';
@@ -5271,7 +5278,7 @@ function goTitle() {
 // 装備・ガチャUI(タイトルから display 切替で往復。phase は 'title' のまま)
 // ---------------------------------------------------------------------
 const equipScreen = document.getElementById('equip-screen');
-const gachaScreen = document.getElementById('gacha-screen');
+const shopScreen = document.getElementById('shop-screen');
 const equipListEl = document.getElementById('equip-list');
 const gachaResultsEl = document.getElementById('gacha-results');
 let selectedSlot = 'weapon';         // 装備画面で開いているスロット
@@ -5281,7 +5288,7 @@ function updateCoinLabels() {
   const t = '💰 ' + equipSave.coins.toLocaleString();
   document.getElementById('title-coins').textContent = t;
   document.getElementById('equip-coins').textContent = t;
-  document.getElementById('gacha-coins').textContent = t;
+  document.getElementById('shop-coins').textContent = t;
 }
 
 // 装備画面: 6スロットグリッド + 選択スロットの所持品リスト。
@@ -5393,10 +5400,9 @@ function doGacha(count, cost) {
 // 機能(タブ)を増やすときはここに足す。screen は表示する .screen の id、
 // locked は「近日公開」枠(タップでトーストだけ出す)、main は中央の大きい強調タブ
 const TITLE_TABS = [
-  { id: 'shop',   label: 'ショップ',   icon: '🏪', locked: true },
+  { id: 'shop',   label: 'ショップ',   icon: '🏪', screen: 'shop-screen' },
   { id: 'equip',  label: '装備',       icon: '⚔️', screen: 'equip-screen' },
   { id: 'battle', label: '戦闘',       icon: '🗡️', screen: 'title-screen', main: true },
-  { id: 'gacha',  label: 'ガチャ',     icon: '🎰', screen: 'gacha-screen' },
   { id: 'rank',   label: 'ランキング', icon: '🏆', locked: true },
 ];
 const titleTabbar = document.getElementById('title-tabbar');
@@ -5432,7 +5438,7 @@ function switchTitleTab(id) {
     if (t.screen) document.getElementById(t.screen).style.display = t.id === id ? 'flex' : 'none';
   }
   if (id === 'equip') renderEquipScreen();
-  else if (id === 'gacha') { updateCoinLabels(); renderGachaButtons(); }
+  else if (id === 'shop') { updateCoinLabels(); renderGachaButtons(); }
   else updateCoinLabels();
   renderTitleTabbar();
 }
