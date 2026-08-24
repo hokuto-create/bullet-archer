@@ -4649,6 +4649,9 @@ function renderDbgActiveTab() {
 }
 
 // --- 装備タブ: コイン・アイテムの付与とセーブ初期化(テスト用) ---
+// 無料ガチャ: ON の間はガチャがコインを消費せず何回でも引ける
+// (doGacha / renderGachaButtons が [DEBUG] マーカー行で参照。リロードで OFF に戻る)
+let dbgFreeGacha = false;
 function renderDbgEquip() {
   const el = dbgTabEls.equip;
   el.innerHTML = '<div class="dbg-note">コイン ' + equipSave.coins + ' / 所持 ' +
@@ -4662,6 +4665,10 @@ function renderDbgEquip() {
     el.appendChild(b);
   };
   mk('コイン +1000', () => addCoins(1000));
+  mk('無料ガチャ: ' + (dbgFreeGacha ? 'ON 🛠' : 'OFF'), () => {
+    dbgFreeGacha = !dbgFreeGacha;
+    renderGachaButtons();              // ショップのボタン表示(無料🛠/disabled)も即追従
+  });
   mk('全装備を付与(素材+5)', () => {
     for (const id in EQUIP_ITEMS) {
       if (!equipSave.items[id]) equipSave.items[id] = { lv: 1, mat: 0 };
@@ -5363,19 +5370,23 @@ function renderEquipScreen() {
 }
 
 // ガチャ画面: ボタンのコスト表示と disabled をコイン残高から更新
+// 開発パネルの「無料ガチャ」中はコインを見ない([DEBUG] 区画の削除後も動くよう typeof で参照)
+function gachaIsFree() { return typeof dbgFreeGacha !== 'undefined' && dbgFreeGacha; }   // [DEBUG] 削除時はこの関数を「return false」にする
 function renderGachaButtons() {
   const g = CONFIG.equip.gacha;
   const b1 = document.getElementById('gacha-pull1');
   const b10 = document.getElementById('gacha-pull10');
-  b1.textContent = '1回引く 💰' + g.cost1;
-  b10.textContent = '10連 💰' + g.cost10;
-  b1.disabled = equipSave.coins < g.cost1;
-  b10.disabled = equipSave.coins < g.cost10;
+  const free = gachaIsFree();
+  b1.textContent = free ? '1回引く 無料🛠' : '1回引く 💰' + g.cost1;
+  b10.textContent = free ? '10連 無料🛠' : '10連 💰' + g.cost10;
+  b1.disabled = !free && equipSave.coins < g.cost1;
+  b10.disabled = !free && equipSave.coins < g.cost10;
 }
 
 // ガチャを引いて結果カードを並べる。カードはスキル3択の card-in を流用して
 // 左上から1枚ずつ跳ねて出る。被りは「→ 素材 +n」表記
 function doGacha(count, cost) {
+  if (gachaIsFree()) cost = 0;         // 開発用の無料ガチャ
   if (equipSave.coins < cost) return;
   equipSave.coins -= cost;
   const results = gachaPull(count);   // 中で saveEquip() される(残高減もまとめて保存)
