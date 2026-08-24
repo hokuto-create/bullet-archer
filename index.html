@@ -5293,11 +5293,14 @@ function updateCoinLabels() {
 
 // 装備画面: 6スロットグリッド + 選択スロットの所持品リスト。
 // 状態が変わるたび丸ごと作り直す(タイトル中だけの画面なので性能は気にしない)
+// スロットグリッドの表示順(2列グリッドの行優先で埋まるので、この並びで
+// 左列 = 武器/お守り/指輪、右列 = 兜/鎧/靴 になる)
+const EQUIP_SLOT_LAYOUT = ['weapon', 'helmet', 'amulet', 'armor', 'ring', 'boots'];
 function renderEquipScreen() {
   updateCoinLabels();
   const slotsEl = document.getElementById('equip-slots');
   slotsEl.innerHTML = '';
-  for (const slot in EQUIP_SLOTS) {
+  for (const slot of EQUIP_SLOT_LAYOUT) {
     const def = EQUIP_SLOTS[slot];
     const id = equipSave.equipped[slot];
     const btn = document.createElement('button');
