@@ -348,7 +348,8 @@
   /* 下段の出撃バー */
   #title-foot {
     flex: none; width: 100%; display: flex; flex-direction: column; align-items: center; gap: 8px;
-    padding: 12px 20px calc(env(safe-area-inset-bottom) + 14px);
+    /* 下端は常設タブバー(#title-tabbar)のぶん空ける */
+    padding: 12px 20px calc(env(safe-area-inset-bottom) + 78px);
     background: linear-gradient(180deg, rgba(8,24,52,0), rgba(8,24,52,0.6));
   }
   #start-btn {
@@ -358,6 +359,147 @@
   }
   #start-btn .b-sub { font-size: 13px; font-weight: bold; opacity: 0.85; }
   #title-hint { font-size: 11px; color: #cfe6ff; line-height: 1.7; text-align: center; }
+  .coin-label { font-size: 15px; font-weight: bold; color: #ffe07a; text-shadow: 0 1px 2px rgba(120,70,0,0.6); }
+
+  /* ==== 装備・ショップ画面と下部タブバー ====
+     タイトル系画面(戦闘=チャプターマップ / 装備 / ショップ(ガチャ))は下部の常設タブバーで
+     即切替する(state.phase は 'title' のまま)。レアリティ色はスキルカードと
+     同じく CSS 変数 --rc で流し込む */
+  #equip-screen, #shop-screen { display: none; justify-content: flex-start; padding: 0; }
+  /* ショップ内のセクション見出し(ガチャ・将来のアイテム販売などを縦に積む) */
+  .shop-sec {
+    width: 100%; max-width: 520px; text-align: left;
+    font-size: 16px; font-weight: 900; color: #ffd76a;
+    border-bottom: 1px solid rgba(255,215,106,0.35); padding-bottom: 6px;
+  }
+  .meta-head {
+    flex: none; width: 100%; display: flex; align-items: center; gap: 12px;
+    padding: calc(env(safe-area-inset-top) + 12px) 16px 10px;
+  }
+  .meta-head .m-title { flex: 1; text-align: left; font-size: 22px; font-weight: 900; color: #ffd76a; }
+  /* 下部タブバー。タイトル系画面の間だけ表示され、.screen(z-index 10)より上に乗る */
+  #title-tabbar {
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 11;
+    display: none; align-items: flex-end; justify-content: center;
+    padding: 0 6px env(safe-area-inset-bottom);
+    background: linear-gradient(180deg, #1a2140, #10142a);
+    border-top: 1px solid rgba(160,190,255,0.25);
+    box-shadow: 0 -4px 18px rgba(0,0,0,0.45);
+  }
+  .t-tab {
+    flex: 1; max-width: 96px; min-width: 0;
+    display: flex; flex-direction: column; align-items: center; gap: 2px;
+    font-family: inherit; color: #8fa2c8; background: none; border: none;
+    padding: 8px 2px 7px; cursor: pointer;
+  }
+  .t-tab:active { transform: scale(0.94); }
+  .t-tab .t-icon { font-size: 24px; line-height: 1.2; }
+  .t-tab .t-label { font-size: 10px; font-weight: bold; white-space: nowrap; }
+  .t-tab.active { color: #ffd76a; }
+  .t-tab.active .t-icon { text-shadow: 0 0 12px rgba(255,200,80,0.8); }
+  /* 中央の「戦闘」タブ: 一回り大きい金色バッジでせり上げる(参考: アーチャー伝説2) */
+  .t-tab.main { position: relative; padding-top: 0; }
+  .t-tab.main .t-icon {
+    font-size: 30px; width: 62px; height: 62px; margin-top: -22px;
+    display: flex; align-items: center; justify-content: center;
+    background: linear-gradient(180deg, #3a4470, #232a4c);
+    border: 2px solid rgba(160,190,255,0.4); border-radius: 18px;
+    box-shadow: 0 4px 14px rgba(0,0,0,0.5);
+  }
+  .t-tab.main.active .t-icon {
+    background: linear-gradient(180deg, #ffd76a, #f0a830);
+    border-color: #fff0c0;
+    box-shadow: 0 4px 18px rgba(255,170,0,0.55);
+  }
+  /* 近日公開のロックタブ: グレー+🔒バッジ(チャプター島の未解放と同じ流儀) */
+  .t-tab.locked { filter: grayscale(1); opacity: 0.55; }
+  .t-tab.locked .t-icon::after { content: '🔒'; font-size: 11px; position: relative; top: -4px; }
+  /* ロックタブを押したときの「近日公開!」吹き出し。1.2秒で消える */
+  #tab-toast {
+    position: fixed; left: 50%; transform: translateX(-50%);
+    bottom: calc(env(safe-area-inset-bottom) + 74px); z-index: 12;
+    background: rgba(10,14,30,0.92); color: #ffd76a;
+    font-size: 13px; font-weight: bold;
+    border: 1px solid rgba(255,215,106,0.5); border-radius: 999px;
+    padding: 8px 18px; pointer-events: none;
+    opacity: 0; transition: opacity 0.25s;
+  }
+  /* 6スロット(2列×3段)。装備中アイテムの枠がレアリティ色になる */
+  #equip-slots {
+    flex: none; display: grid; grid-template-columns: repeat(2, 1fr);
+    gap: 8px; width: 100%; max-width: 480px; padding: 4px 14px 10px;
+  }
+  .eq-slot {
+    display: flex; align-items: center; gap: 8px; min-width: 0;
+    font-family: inherit; color: #fff; text-align: left; cursor: pointer;
+    background: linear-gradient(180deg, rgba(40,48,88,0.95), rgba(22,26,52,0.95));
+    border: 2px solid var(--rc, rgba(160,190,255,0.35));
+    border-radius: 12px; padding: 8px 10px;
+  }
+  .eq-slot:active { transform: scale(0.97); }
+  .eq-slot.selected { background: linear-gradient(180deg, rgba(64,76,132,0.95), rgba(36,44,86,0.95)); box-shadow: 0 0 10px var(--rc, rgba(160,190,255,0.4)); }
+  .eq-slot .e-icon { font-size: 24px; flex: none; }
+  .eq-slot .e-body { min-width: 0; }
+  .eq-slot .e-slotname { font-size: 10px; color: #9ab; letter-spacing: 0.1em; }
+  .eq-slot .e-item { font-size: 13px; font-weight: bold; color: var(--rc, #8899aa); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  /* 選択スロットの所持品リスト。縦スクロール */
+  #equip-list {
+    flex: 1; width: 100%; max-width: 480px; min-height: 0;
+    overflow-y: auto; -webkit-overflow-scrolling: touch;
+    padding: 0 14px calc(env(safe-area-inset-bottom) + 78px);
+  }
+  .eq-row {
+    display: flex; align-items: center; gap: 10px; text-align: left;
+    background: rgba(22,26,52,0.9); border: 2px solid var(--rc, rgba(160,190,255,0.3));
+    border-radius: 12px; padding: 9px 10px; margin-bottom: 8px; color: #fff;
+  }
+  .eq-row .e-icon { font-size: 26px; flex: none; }
+  .eq-row .e-info { flex: 1; min-width: 0; }
+  .eq-row .e-name { font-size: 14px; font-weight: bold; color: var(--rc, #fff); }
+  .eq-row .e-name .e-lv { font-size: 11px; color: #9fe08a; margin-left: 6px; }
+  .eq-row .e-desc { font-size: 11px; color: #bcd; line-height: 1.5; }
+  .eq-row .e-mat { font-size: 10px; color: #9ab; }
+  .eq-row .e-btns { display: flex; flex-direction: column; gap: 5px; flex: none; }
+  .e-btn {
+    font-family: inherit; font-size: 11px; font-weight: bold; color: #10142a;
+    background: linear-gradient(180deg, #ffd76a, #f0a830);
+    border: none; border-radius: 8px; padding: 6px 10px; cursor: pointer; white-space: nowrap;
+  }
+  .e-btn:active { transform: scale(0.95); }
+  .e-btn:disabled { opacity: 0.45; cursor: default; transform: none; }
+  .e-btn.on { background: linear-gradient(180deg, #9fe08a, #5cb85c); }
+  .eq-empty { font-size: 13px; color: #9ab; padding: 24px 0; text-align: center; }
+  /* ガチャ画面: 引くボタンと結果カード。カードはスキル3択の card-in を流用 */
+  #gacha-body {
+    flex: 1; width: 100%; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch;
+    display: flex; flex-direction: column; align-items: center; gap: 14px;
+    padding: 8px 14px calc(env(safe-area-inset-bottom) + 78px);
+  }
+  #gacha-btns { display: flex; gap: 12px; flex: none; }
+  #gacha-btns .btn { font-size: 16px; padding: 12px 26px; }
+  #gacha-btns .btn:disabled { opacity: 0.45; cursor: default; transform: none; }
+  #gacha-hint { font-size: 11px; color: #9ab; }
+  #gacha-results {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(84px, 1fr));
+    gap: 8px; width: 100%; max-width: 520px;
+  }
+  .g-card {
+    display: flex; flex-direction: column; align-items: center; gap: 2px;
+    background: linear-gradient(180deg, rgba(40,48,88,0.95), rgba(22,26,52,0.95));
+    border: 2px solid var(--rc, rgba(160,190,255,0.45));
+    border-radius: 12px; padding: 10px 4px; text-align: center; color: #fff;
+    animation: card-in 0.45s cubic-bezier(0.34, 1.56, 0.64, 1) backwards;
+    animation-delay: var(--in-delay, 0s);
+  }
+  .g-card.rarity-epic, .g-card.rarity-legendary {
+    animation: card-in 0.45s cubic-bezier(0.34, 1.56, 0.64, 1) backwards,
+               rarity-glow 1.2s ease-in-out infinite;
+    animation-delay: var(--in-delay, 0s), var(--in-delay, 0s);
+  }
+  .g-card .g-icon { font-size: 26px; }
+  .g-card .g-rarity { font-size: 9px; font-weight: bold; color: var(--rc); letter-spacing: 0.1em; }
+  .g-card .g-name { font-size: 11px; font-weight: bold; line-height: 1.3; }
+  .g-card .g-dupe { font-size: 9px; color: #9fe08a; }
 
   /* ===== [DEBUG] スキル自由取得(使用感テスト用。リリース時にこのブロックを削除) ===== */
   #dbg-skill-btn {
@@ -474,6 +616,7 @@
       <button class="dbg-tab-btn active" data-tab="get">スキル取得</button>
       <button class="dbg-tab-btn" data-tab="list">スキル一覧</button>
       <button class="dbg-tab-btn" data-tab="power">火力表</button>
+      <button class="dbg-tab-btn" data-tab="equip">装備</button>
     </div>
     <div class="dbg-tab" id="dbg-tab-get">
       <div id="dbg-list"></div>
@@ -481,6 +624,7 @@
     </div>
     <div class="dbg-tab" id="dbg-tab-list" style="display:none"></div>
     <div class="dbg-tab" id="dbg-tab-power" style="display:none"></div>
+    <div class="dbg-tab" id="dbg-tab-equip" style="display:none"></div>
     <button id="dbg-close">閉じる</button>
   </div>
 </div>
@@ -492,6 +636,7 @@
   </div>
   <div id="chapter-map"><div id="chapter-select"></div></div>
   <div id="title-foot">
+    <span id="title-coins" class="coin-label"></span>
     <button id="start-btn" class="btn"><span>開始</span><span class="b-sub" id="start-btn-sub"></span></button>
     <p id="title-hint">
       移動: WASD / 矢印キー / 仮想ジョイスティック ・ 立ち止まると自動攻撃!<br>
@@ -499,6 +644,35 @@
     </p>
   </div>
 </div>
+
+<div id="equip-screen" class="screen">
+  <div class="meta-head">
+    <span class="m-title">⚔️ 装備</span>
+    <span id="equip-coins" class="coin-label"></span>
+  </div>
+  <div id="equip-slots"></div>
+  <div id="equip-list"></div>
+</div>
+
+<div id="shop-screen" class="screen">
+  <div class="meta-head">
+    <span class="m-title">🏪 ショップ</span>
+    <span id="shop-coins" class="coin-label"></span>
+  </div>
+  <div id="gacha-body">
+    <div class="shop-sec">🎰 装備ガチャ</div>
+    <div id="gacha-btns">
+      <button id="gacha-pull1" class="btn"></button>
+      <button id="gacha-pull10" class="btn sub"></button>
+    </div>
+    <div id="gacha-hint">被った装備はその装備の強化素材に自動変換されます</div>
+    <div id="gacha-results"></div>
+  </div>
+</div>
+
+<!-- タイトル下部の常設タブバー(中身は renderTitleTabbar() が TITLE_TABS から生成) -->
+<div id="title-tabbar"></div>
+<div id="tab-toast"></div>
 
 <div id="gameover-screen" class="screen">
   <div id="go-title">GAME OVER</div>
@@ -570,6 +744,7 @@ const CONFIG = {
       waves: 30, name: 'CHAPTER 1', subtitle: '〜 始まりの荒野 〜',
       clearBonus: 5000,             // クリア時のスコアボーナス
       hpBonus: 20,                  // 残HP1につき加算するスコア(粘り勝ちを評価する)
+      coinBonus: 300,               // クリア時のコイン(装備ガチャ用)
       enemyHpMul: 1, enemySpeedMul: 1, bulletSpeedMul: 1,
       floorColor: 0x1a1f33, wallColor: 0x3355aa, wallEmissive: 0x112244,
       isleLeaf: '#2f9e50', isleLeafHi: '#8fd985',   // タイトルの島マップの植生色
@@ -578,6 +753,7 @@ const CONFIG = {
       waves: 30, name: 'CHAPTER 2', subtitle: '〜 紅蓮の戦場 〜',
       clearBonus: 10000,
       hpBonus: 30,
+      coinBonus: 500,
       enemyHpMul: 1.6, enemySpeedMul: 1.15, bulletSpeedMul: 1.2,
       floorColor: 0x2c1520, wallColor: 0xaa3355, wallEmissive: 0x441122,
       isleLeaf: '#b8433f', isleLeafHi: '#ef9463',   // 紅蓮: 燃えるような赤い植生
@@ -613,6 +789,23 @@ const CONFIG = {
       epic:      { weight: 2, label: 'エピック',       color: '#c76bff' },
       legendary: { weight: 1, label: 'レジェンダリー', color: '#ffb64d' },
     },
+  },
+  // 装備システム(6部位)。ラン外のメタ進行: ガチャで入手 → 強化 → 装備してランに挑む。
+  // アイテム定義は EQUIP_ITEMS(データ駆動)、所持・装備状況は localStorage に保存
+  equip: {
+    growthPerLv: 0.2,               // 強化1Lvごとに基礎値の20%ずつ伸びる(Lv5で基礎の1.8倍)
+    lvCap:     { common: 5, rare: 7, epic: 9, legendary: 10 },   // レアリティ別の強化上限Lv
+    // 強化コスト: Lv n → n+1 は「その装備の素材 matPerLv 個 + コイン coinPerLv × n」。
+    // 高レアほど被り(=素材)が出にくいぶん素材要求は軽くし、かわりにコインを重くする
+    matPerLv:  { common: 3, rare: 2, epic: 1, legendary: 1 },
+    coinPerLv: { common: 40, rare: 80, epic: 160, legendary: 320 },
+    dupeMat:   { common: 1, rare: 1, epic: 1, legendary: 1 },    // ガチャ被り1回で得る素材数
+    gacha: {
+      cost1: 100, cost10: 900,      // 1回 / 10連(1割引)のコイン
+      // ガチャのレアリティ重み(スキル抽選の 4/3/2/1 より尖らせる。色・ラベルは level.rarity を共用)
+      weights: { common: 55, rare: 30, epic: 12, legendary: 3 },
+    },
+    rewards: { wave: 10, boss: 40 },  // 通常ウェーブ / ボスウェーブのクリアで得るコイン
   },
   // 召喚攻撃(星・霊剣・守護者)とエレメント。スキルで手に入る追加攻撃手段の数値はここに集約
   arts: {
@@ -1438,7 +1631,7 @@ function updatePlayerAnimation(dt) {
 function resetPlayer() {
   player.mesh.position.set(0, 0, 0);
   player.mesh.rotation.set(0, 0, 0);   // lookAt が残した x/z 成分ごと消す
-  player.maxHp = CONFIG.player.maxHp;
+  player.maxHp = CONFIG.player.maxHp + equipStats.hpBonus;   // 装備(兜・鎧)のHPはここで乗る。vital はこの上に加算
   player.hp = player.maxHp;
   player.fireTimer = 0;
   player.invincible = 0;
@@ -1452,7 +1645,8 @@ function resetPlayer() {
 
 function damagePlayer(amount) {
   if (player.invincible > 0 || state.phase !== 'playing') return;
-  player.hp -= amount;
+  // 装備(鎧)の被ダメ軽減。最低1は必ず通す(不死身防止)
+  player.hp -= Math.max(1, Math.round(amount * (1 - level.stats.dmgCut)));
   player.invincible = CONFIG.player.hitInvincible;
   // 闘気の構え: 被弾でチャージ全損(明鏡止水があれば半分だけ失う)
   if (level.stats.zanshin && graze.charges > 0) {
@@ -2023,6 +2217,200 @@ function resetDamageTexts() {
 }
 
 // =====================================================================
+// 装備システム(6部位: ガチャ・強化・永続化)
+// =====================================================================
+// ラン外のメタ進行。タイトルの「装備」「ガチャ」画面で完結し、ラン中は変更不可。
+// コインはウェーブ/チャプタークリアで貯まり(付与のたび即セーブなので
+// ゲームオーバーでも失わない)、ガチャで装備を引く。被りはその装備専用の
+// 強化素材に自動変換。数値バランスは CONFIG.equip、レアリティの色・ラベルは
+// CONFIG.level.rarity を共用する。ステータスへの反映は recomputeEquipStats() →
+// equipStats → recomputeSkillStats()(焼き込み)の一方通行で、装備なしなら
+// equipStats は全て恒等値(既存挙動と完全一致)になる
+
+// 装備スロット(6部位)。表示順もこの定義順
+const EQUIP_SLOTS = {
+  weapon: { label: '武器',   icon: '🏹' },
+  helmet: { label: '兜',     icon: '🪖' },
+  armor:  { label: '鎧',     icon: '🛡️' },
+  boots:  { label: '靴',     icon: '👢' },
+  ring:   { label: '指輪',   icon: '💍' },
+  amulet: { label: 'お守り', icon: '🧿' },
+};
+
+// 装備アイテム(データ駆動: 増やすときはここにオブジェクトを足す)。
+// レアリティはアイテム固定(SKILLS と同じ流儀)。数値は Lv1 の基礎値で、
+// 強化1Lvごとに基礎値の CONFIG.equip.growthPerLv 倍ずつ伸びる(itemStatAt)。
+// 効果フィールド: atk=攻撃%, hp=最大HP, cut=被ダメ軽減%, spd=移動速度%,
+// rate=攻撃速度%, summon=召喚ダメージ%, graze=強化ショット倍率加算
+const EQUIP_ITEMS = {
+  // --- 武器(攻撃%) ---
+  bow_oak:      { slot: 'weapon', icon: '🏹', name: '樫の長弓',     rarity: 'common',    atk: 0.06 },
+  bow_hawk:     { slot: 'weapon', icon: '🏹', name: '鷹羽の強弓',   rarity: 'rare',      atk: 0.10 },
+  bow_moon:     { slot: 'weapon', icon: '🌙', name: '月影の霊弓',   rarity: 'epic',      atk: 0.15 },
+  bow_astral:   { slot: 'weapon', icon: '🌟', name: '星喰いの神弓', rarity: 'legendary', atk: 0.22 },
+  // --- 兜(最大HP) ---
+  helm_leather: { slot: 'helmet', icon: '🪖', name: '革の頭巾',     rarity: 'common',    hp: 10 },
+  helm_iron:    { slot: 'helmet', icon: '⛑️', name: '鉄の兜',       rarity: 'rare',      hp: 20 },
+  helm_drake:   { slot: 'helmet', icon: '🐲', name: '竜鱗の兜',     rarity: 'epic',      hp: 32 },
+  helm_valkyrie:{ slot: 'helmet', icon: '👑', name: '戦乙女の宝冠', rarity: 'legendary', hp: 50 },
+  // --- 鎧(被ダメ軽減 + 高レアは最大HPも) ---
+  mail_cloth:   { slot: 'armor',  icon: '🧥', name: '旅人の胴着',   rarity: 'common',    cut: 0.03 },
+  mail_knight:  { slot: 'armor',  icon: '🛡️', name: '騎士の板金鎧', rarity: 'rare',      cut: 0.06, hp: 10 },
+  mail_mithril: { slot: 'armor',  icon: '✨', name: '霊銀の聖鎧',   rarity: 'epic',      cut: 0.10, hp: 16 },
+  mail_aegis:   { slot: 'armor',  icon: '🌈', name: '不落のイージス', rarity: 'legendary', cut: 0.15, hp: 25 },
+  // --- 靴(移動速度%) ---
+  boots_straw:  { slot: 'boots',  icon: '👢', name: '編み革のブーツ', rarity: 'common',   spd: 0.05 },
+  boots_wind:   { slot: 'boots',  icon: '💨', name: '風走りの靴',   rarity: 'rare',      spd: 0.08 },
+  boots_shadow: { slot: 'boots',  icon: '🌒', name: '影渡りの足袋', rarity: 'epic',      spd: 0.12 },
+  boots_pegasus:{ slot: 'boots',  icon: '🪽', name: '天馬の銀蹄',   rarity: 'legendary', spd: 0.18 },
+  // --- 指輪(攻撃速度%) ---
+  ring_copper:  { slot: 'ring',   icon: '💍', name: '銅の指輪',     rarity: 'common',    rate: 0.05 },
+  ring_gale:    { slot: 'ring',   icon: '🌀', name: '疾風の指輪',   rarity: 'rare',      rate: 0.08 },
+  ring_thunder: { slot: 'ring',   icon: '⚡', name: '雷鳴の指輪',   rarity: 'epic',      rate: 0.12 },
+  ring_chrono:  { slot: 'ring',   icon: '⏳', name: '刻詠みの指環', rarity: 'legendary', rate: 0.18 },
+  // --- お守り(召喚% or 強化ショット倍率) ---
+  charm_herb:   { slot: 'amulet', icon: '🌿', name: '薬草の匂い袋', rarity: 'common',    summon: 0.06 },
+  charm_owl:    { slot: 'amulet', icon: '🦉', name: '梟の護符',     rarity: 'rare',      summon: 0.10 },
+  charm_fox:    { slot: 'amulet', icon: '🦊', name: '妖狐のお守り', rarity: 'epic',      graze: 0.3 },
+  charm_dragon: { slot: 'amulet', icon: '🐉', name: '龍神の勾玉',   rarity: 'legendary', summon: 0.15, graze: 0.3 },
+};
+
+// アイテム効果の日本語説明(装備画面・ガチャ結果・火力表で共用)
+const EQUIP_STAT_DEFS = [
+  { key: 'atk',    fmt: (v) => '攻撃 +' + Math.round(v * 100) + '%' },
+  { key: 'hp',     fmt: (v) => '最大HP +' + Math.round(v) },
+  { key: 'cut',    fmt: (v) => '被ダメ -' + Math.round(v * 100) + '%' },
+  { key: 'spd',    fmt: (v) => '移動 +' + Math.round(v * 100) + '%' },
+  { key: 'rate',   fmt: (v) => '攻撃速度 +' + Math.round(v * 100) + '%' },
+  { key: 'summon', fmt: (v) => '召喚 +' + Math.round(v * 100) + '%' },
+  { key: 'graze',  fmt: (v) => '強化ショット倍率 +' + (Math.round(v * 10) / 10) },
+];
+
+// Lv 込みの実効値。基礎値 ×(1 + growthPerLv × (Lv-1))
+function itemStatAt(id, key, lv) {
+  const base = EQUIP_ITEMS[id][key];
+  if (base == null) return 0;
+  return base * (1 + CONFIG.equip.growthPerLv * (lv - 1));
+}
+function itemDesc(id, lv) {
+  return EQUIP_STAT_DEFS
+    .filter((s) => EQUIP_ITEMS[id][s.key] != null)
+    .map((s) => s.fmt(itemStatAt(id, s.key, lv)))
+    .join('・');
+}
+function itemLvCap(id) { return CONFIG.equip.lvCap[EQUIP_ITEMS[id].rarity]; }
+// Lv lv → lv+1 の強化コスト。上限なら null
+function upgradeCost(id) {
+  const st = equipSave.items[id];
+  if (!st || st.lv >= itemLvCap(id)) return null;
+  const r = EQUIP_ITEMS[id].rarity;
+  return { mat: CONFIG.equip.matPerLv[r], coin: CONFIG.equip.coinPerLv[r] * st.lv };
+}
+
+// --- 永続化(localStorage)。既存の bulletArcher.cleared と同じ try/catch 流儀 ---
+// スキーマ: { v:1, coins, items:{ id:{lv, mat} }, equipped:{ slot:id|null } }
+const EQUIP_KEY = 'bulletArcher.equip';
+let equipSave = { v: 1, coins: 0, items: {}, equipped: {} };
+try {
+  const raw = JSON.parse(localStorage.getItem(EQUIP_KEY));
+  if (raw && raw.v === 1 && typeof raw.coins === 'number') {
+    equipSave.coins = Math.max(0, Math.floor(raw.coins) || 0);
+    // 未知の id は読み捨て(アイテム改名に耐える)。lv は上限に clamp
+    for (const id in (raw.items || {})) {
+      if (!EQUIP_ITEMS[id]) continue;
+      const it = raw.items[id] || {};
+      equipSave.items[id] = {
+        lv: Math.min(itemLvCap(id), Math.max(1, Math.floor(it.lv) || 1)),
+        mat: Math.max(0, Math.floor(it.mat) || 0),
+      };
+    }
+    // 装備中は「実在・スロット一致・所持済み」のものだけ復元
+    for (const s in EQUIP_SLOTS) {
+      const id = (raw.equipped || {})[s];
+      if (id && EQUIP_ITEMS[id] && EQUIP_ITEMS[id].slot === s && equipSave.items[id]) equipSave.equipped[s] = id;
+    }
+  }
+} catch (e) { /* プライベートモード・壊れた JSON は初期状態で続行 */ }
+function saveEquip() {
+  try { localStorage.setItem(EQUIP_KEY, JSON.stringify(equipSave)); } catch (e) { /* 保存できなくても続行 */ }
+}
+
+// --- 装備ステータス集計。装備の変更・強化・ロード時だけ再計算する ---
+// recomputeSkillStats() がこの値を焼き込むので、末尾で必ず呼び直す
+let equipStats = { atkMul: 1, rateMul: 1, spdMul: 1, summonMul: 1, grazeFlat: 0, hpBonus: 0, dmgCut: 0 };
+function recomputeEquipStats() {
+  const s = { atkMul: 1, rateMul: 1, spdMul: 1, summonMul: 1, grazeFlat: 0, hpBonus: 0, dmgCut: 0 };
+  for (const slot in EQUIP_SLOTS) {
+    const id = equipSave.equipped[slot];
+    if (!id || !equipSave.items[id]) continue;
+    const lv = equipSave.items[id].lv;
+    s.atkMul    *= 1 + itemStatAt(id, 'atk', lv);
+    s.rateMul   *= 1 + itemStatAt(id, 'rate', lv);
+    s.spdMul    *= 1 + itemStatAt(id, 'spd', lv);
+    s.summonMul *= 1 + itemStatAt(id, 'summon', lv);
+    s.grazeFlat += itemStatAt(id, 'graze', lv);
+    s.hpBonus   += Math.round(itemStatAt(id, 'hp', lv));
+    s.dmgCut    += itemStatAt(id, 'cut', lv);
+  }
+  s.dmgCut = Math.min(0.6, s.dmgCut);   // 軽減の積みすぎ保険(現アイテムでは届かない)
+  equipStats = s;
+  recomputeSkillStats();                // level.stats に焼き込まれた装備倍率を更新
+}
+
+// コイン付与。付与のたび即セーブする(ゲームオーバーでもラン中の獲得分を失わない)
+function addCoins(n) {
+  equipSave.coins += n;
+  saveEquip();
+}
+
+// ガチャを count 回引く。結果は [{id, dupe}](dupe=true なら素材変換された被り)。
+// コイン判定は呼び出し側(UI)が行う
+function gachaPull(count) {
+  const results = [];
+  for (let i = 0; i < count; i++) {
+    // 2段抽選: 重みでレアリティ段 → 段内から等確率で1個(rollRarityTier と同じ流儀)
+    const weights = CONFIG.equip.gacha.weights;
+    let total = 0;
+    for (const r in weights) total += weights[r];
+    let roll = Math.random() * total;
+    let tier = 'common';
+    for (const r in weights) { roll -= weights[r]; if (roll <= 0) { tier = r; break; } }
+    const pool = Object.keys(EQUIP_ITEMS).filter((id) => EQUIP_ITEMS[id].rarity === tier);
+    const id = pool[Math.floor(Math.random() * pool.length)];
+    if (equipSave.items[id]) {
+      equipSave.items[id].mat += CONFIG.equip.dupeMat[tier];   // 被り → 強化素材に自動変換
+      results.push({ id, dupe: true });
+    } else {
+      equipSave.items[id] = { lv: 1, mat: 0 };
+      results.push({ id, dupe: false });
+    }
+  }
+  saveEquip();
+  return results;
+}
+
+// 装備する(所持していなければ何もしない)。外す操作は無し(付け替えのみ)
+function equipItem(id) {
+  if (!equipSave.items[id]) return;
+  equipSave.equipped[EQUIP_ITEMS[id].slot] = id;
+  saveEquip();
+  recomputeEquipStats();
+}
+
+// 強化する。素材+コインが足りなければ false
+function upgradeItem(id) {
+  const cost = upgradeCost(id);
+  const st = equipSave.items[id];
+  if (!cost || st.mat < cost.mat || equipSave.coins < cost.coin) return false;
+  st.mat -= cost.mat;
+  equipSave.coins -= cost.coin;
+  st.lv += 1;
+  saveEquip();
+  recomputeEquipStats();
+  return true;
+}
+
+// =====================================================================
 // レベル・スキル(アーチャー伝説方式)
 // =====================================================================
 // 敵を倒すと exp が入り、レベルアップすると 3 択からスキルを選ぶ。
@@ -2156,20 +2544,21 @@ function recomputeSkillStats() {
   const lion = n('lion_stance') > 0 ? SKILLS.lion_stance : null;
   const crescent = n('crescent') > 0 ? SKILLS.crescent : null;   // 弦月の構えも発射間隔を倍にする
   level.stats = {
-    damageMul: (1 + SKILLS.power.value * n('power') + SKILLS.mighty.value * n('mighty')) * allMul,
-    fireMul: (1 + SKILLS.rapid.value * n('rapid') + SKILLS.flurry.value * n('flurry'))
+    damageMul: (1 + SKILLS.power.value * n('power') + SKILLS.mighty.value * n('mighty')) * allMul * equipStats.atkMul,
+    fireMul: (1 + SKILLS.rapid.value * n('rapid') + SKILLS.flurry.value * n('flurry')) * equipStats.rateMul
       / (lion ? lion.intervalMul : 1) / (crescent ? crescent.intervalMul : 1),
     lion,                             // 獅子の間合い(未取得なら null。距離倍率は firePlayerShot が読む)
     crescent,                         // 弦月の構え(未取得なら null。fireArrow が矢を刃に置き換える)
     arrowHitMul: n('broadhead') > 0 ? SKILLS.broadhead.hitMul : 1,   // 大鏃: 矢の当たり判定倍率
     echo: n('echo_head') > 0 ? SKILLS.echo_head : null,              // 残響の鏃(刃では刻み倍速に変質)
     eclipse: n('eclipse') > 0,        // 月蝕: 自弾が敵弾をかき消してグレイズ化
-    speedMul: 1 + SKILLS.boots.value * n('boots'),
+    speedMul: (1 + SKILLS.boots.value * n('boots')) * equipStats.spdMul,
     multishot: n('multishot'),      // 正面の追加本数
     pierce: n('pierce'),            // 貫通できる敵の数
     back: n('back') > 0,
     side: n('side') > 0,
-    grazeMul: 1 + SKILLS.grazeup.value * n('grazeup'),
+    grazeMul: 1 + SKILLS.grazeup.value * n('grazeup') + equipStats.grazeFlat,
+    dmgCut: equipStats.dmgCut,        // 装備(鎧)の被ダメ軽減。damagePlayer が読む
     zanshin: n('zanshin') > 0 ? SKILLS.zanshin : null,   // 闘気の構え(チャージ非消費・常時倍率)
     maai: n('maai') > 0 ? SKILLS.maai : null,            // 淀みの間合い(リング内の敵弾減速)
     mirror: n('mirror') > 0 ? SKILLS.mirror : null,      // 明鏡止水(満タンで敵弾減速・損失半減)
@@ -2180,7 +2569,7 @@ function recomputeSkillStats() {
     regenChance: n('regen') > 0 ? SKILLS.regen.chance : 0,   // ヒット時にHP回復する確率
     // --- 召喚攻撃・エレメント ---
     arrowElems: elems('arrow'),               // 矢に乗る属性
-    summonMul: (1 + SKILLS.summon_power.value * n('summon_power') + SKILLS.summon_mastery.value * n('summon_mastery')) * allMul * summonRate,
+    summonMul: (1 + SKILLS.summon_power.value * n('summon_power') + SKILLS.summon_mastery.value * n('summon_mastery')) * allMul * summonRate * equipStats.summonMul,
     star: {
       onAttack: Math.min(1, chance('star_attack') * summonRate),   // 攻撃時に星が落ちる確率
       onKill: Math.min(1, chance('star_kill') * summonRate),       // 撃破時に星が落ちる確率
@@ -2210,7 +2599,7 @@ function recomputeSkillStats() {
     guardOrbitMul: n('guard_gallop') > 0 ? SKILLS.guard_gallop.orbitMul : 1, // 早駆けの蹄
   };
 }
-recomputeSkillStats();
+recomputeEquipStats();   // セーブから復元した装備を焼き込む(中で recomputeSkillStats() を呼ぶ)
 
 // 経験値の加算とレベルアップ判定。ここではキューに積むだけで、
 // 3択画面を開くのは animate()(敵ループの途中で phase を変えないため)
@@ -3608,8 +3997,12 @@ function onWaveClear() {
   const final = isFinalWave(state.wave);
   if (!final) player.hp = Math.min(player.maxHp, player.hp + CONFIG.wave.clearHeal);
   clearPool(bulletPool);
+  // 装備ガチャ用のコイン。ボスウェーブは多め。付与のたび即セーブ(ゲームオーバーでも残る)
+  const coin = state.wave % CONFIG.wave.bossEvery === 0 ? CONFIG.equip.rewards.boss : CONFIG.equip.rewards.wave;
+  addCoins(coin);
+  state.runCoins += coin;
   updateHud();
-  showWaveBanner(final ? chapterDef().name + ' CLEAR!' : 'WAVE CLEAR!  +' + CONFIG.wave.clearHeal + ' HP');
+  showWaveBanner(final ? chapterDef().name + ' CLEAR!' : 'WAVE CLEAR!  +' + CONFIG.wave.clearHeal + ' HP  +' + coin + ' 💰');
   setTimeout(() => {
     if (state.phase === 'playing') advanceWave();
     // スキル選択中なら、閉じたとき(closeLevelUp)に次へ進む
@@ -3729,6 +4122,7 @@ const state = {
   time: 0,
   waveQueued: false,   // スキル選択でウェーブ開始を保留した印
   endless: false,      // チャプタークリア後に「このまま続ける」を選んだ状態
+  runCoins: 0,         // このランで獲得したコイン(リザルト表示用。付与自体は即セーブ)
 };
 const clock = new THREE.Clock();
 
@@ -4244,12 +4638,42 @@ const dbgTabEls = {
   get: document.getElementById('dbg-tab-get'),
   list: document.getElementById('dbg-tab-list'),
   power: document.getElementById('dbg-tab-power'),
+  equip: document.getElementById('dbg-tab-equip'),
 };
 let dbgActiveTab = 'get';
 function renderDbgActiveTab() {
   if (dbgActiveTab === 'list') renderDbgSkillList();
   else if (dbgActiveTab === 'power') renderDbgPower();
+  else if (dbgActiveTab === 'equip') renderDbgEquip();
   else renderDbgPanel();
+}
+
+// --- 装備タブ: コイン・アイテムの付与とセーブ初期化(テスト用) ---
+function renderDbgEquip() {
+  const el = dbgTabEls.equip;
+  el.innerHTML = '<div class="dbg-note">コイン ' + equipSave.coins + ' / 所持 ' +
+    Object.keys(equipSave.items).length + ' 種。付与や初期化は即セーブされる</div>';
+  const mk = (label, fn) => {
+    const b = document.createElement('button');
+    b.className = 'dbg-tab-btn';
+    b.style.margin = '4px 6px 4px 0';
+    b.textContent = label;
+    b.addEventListener('click', () => { fn(); renderDbgEquip(); });
+    el.appendChild(b);
+  };
+  mk('コイン +1000', () => addCoins(1000));
+  mk('全装備を付与(素材+5)', () => {
+    for (const id in EQUIP_ITEMS) {
+      if (!equipSave.items[id]) equipSave.items[id] = { lv: 1, mat: 0 };
+      equipSave.items[id].mat += 5;
+    }
+    saveEquip();
+  });
+  mk('装備セーブを初期化', () => {
+    equipSave = { v: 1, coins: 0, items: {}, equipped: {} };
+    saveEquip();
+    recomputeEquipStats();
+  });
 }
 document.querySelectorAll('.dbg-tab-btn').forEach((btn) => {
   btn.addEventListener('click', () => {
@@ -4311,6 +4735,22 @@ function renderDbgPower() {
   let mainDps = 0;                  // 概算合計に使う通常攻撃のDPS(矢か刃の実際に動いている方)
   let summonDps = 0;                // 周期・攻撃時トリガー・守護者ぶんの期待DPS合計
   let html = '';
+
+  // 装備(6部位)。equipStats は攻撃倍率・速度倍率・召喚倍率などに焼き込み済みなので、
+  // 下の各表の数値には装備分が含まれている
+  {
+    let r = '';
+    for (const slot in EQUIP_SLOTS) {
+      const id = equipSave.equipped[slot];
+      r += row(EQUIP_SLOTS[slot].label,
+        id ? EQUIP_ITEMS[id].icon + ' ' + EQUIP_ITEMS[id].name + ' Lv' + equipSave.items[id].lv : '—',
+        id ? itemDesc(id, equipSave.items[id].lv) : NA);
+    }
+    r += row('合算', '攻 ×' + fmt(equipStats.atkMul) + ' / 攻速 ×' + fmt(equipStats.rateMul) + ' / 移動 ×' + fmt(equipStats.spdMul),
+      '召喚 ×' + fmt(equipStats.summonMul) + ' / HP +' + equipStats.hpBonus +
+      ' / 被ダメ -' + pct(equipStats.dmgCut) + ' / 強化ショット +' + fmt(equipStats.grazeFlat));
+    html += sec('⚔️ 装備(下の各倍率に焼き込み済み)', r);
+  }
 
   // 矢(弦月取得中は「外した場合の参考値」として出す)
   {
@@ -4744,6 +5184,7 @@ function startGame(chapterIndex) {
   clearPool(bulletPool);
   resetPlayer();
   state.score = 0;
+  state.runCoins = 0;
   state.phase = 'playing';
   state.waveQueued = false;
   state.endless = false;
@@ -4753,6 +5194,9 @@ function startGame(chapterIndex) {
   resetDamageTexts();
   resetFx();
   titleScreen.style.display = 'none';
+  equipScreen.style.display = 'none';
+  shopScreen.style.display = 'none';
+  titleTabbar.style.display = 'none';
   gameoverScreen.style.display = 'none';
   levelupScreen.style.display = 'none';
   clearScreen.style.display = 'none';
@@ -4764,7 +5208,8 @@ function gameOver() {
   state.phase = 'gameover';
   goStats.innerHTML = chapterDef().name + '  WAVE ' + state.wave
     + (state.endless ? '' : ' / ' + chapterDef().waves)
-    + ' 到達 / Lv ' + level.lv + '<br>SCORE ' + state.score;
+    + ' 到達 / Lv ' + level.lv + '<br>SCORE ' + state.score
+    + '<br>獲得コイン +' + state.runCoins + ' 💰';
   gameoverScreen.style.display = 'flex';
   hudEl.style.display = 'none';
   joyEnd();
@@ -4780,6 +5225,8 @@ function chapterClear() {
   const hp = Math.ceil(player.hp);
   const bonus = ch.clearBonus + hp * ch.hpBonus;
   state.score += bonus;
+  addCoins(ch.coinBonus);            // 装備ガチャ用のコイン(即セーブ)
+  state.runCoins += ch.coinBonus;
   clearPool(arrowPool);
   clearPool(crescentPool);
   clearPool(bulletPool);
@@ -4791,6 +5238,7 @@ function chapterClear() {
     'WAVE ' + ch.waves + ' 制覇 / Lv ' + level.lv + '<br>' +
     'クリアボーナス +' + ch.clearBonus + '<br>' +
     '残HPボーナス +' + (hp * ch.hpBonus) + '  (HP ' + hp + ')<br>' +
+    'コイン +' + ch.coinBonus + ' 💰  (合計 +' + state.runCoins + ')<br>' +
     'SCORE ' + state.score;
   // 次のチャプターがあるときだけ「次のチャプターへ」を出す
   nextBtn.style.display = state.chapter + 1 < CONFIG.chapters.length ? '' : 'none';
@@ -4822,8 +5270,184 @@ function goTitle() {
   clearScreen.style.display = 'none';
   gameoverScreen.style.display = 'none';
   hudEl.style.display = 'none';
-  titleScreen.style.display = 'flex';
+  titleTabbar.style.display = 'flex';
+  switchTitleTab('battle');          // 戦闘タブ(チャプターマップ)から再開。コイン表示も同期される
 }
+
+// ---------------------------------------------------------------------
+// 装備・ガチャUI(タイトルから display 切替で往復。phase は 'title' のまま)
+// ---------------------------------------------------------------------
+const equipScreen = document.getElementById('equip-screen');
+const shopScreen = document.getElementById('shop-screen');
+const equipListEl = document.getElementById('equip-list');
+const gachaResultsEl = document.getElementById('gacha-results');
+let selectedSlot = 'weapon';         // 装備画面で開いているスロット
+
+function rarityColor(r) { return CONFIG.level.rarity[r].color; }
+function updateCoinLabels() {
+  const t = '💰 ' + equipSave.coins.toLocaleString();
+  document.getElementById('title-coins').textContent = t;
+  document.getElementById('equip-coins').textContent = t;
+  document.getElementById('shop-coins').textContent = t;
+}
+
+// 装備画面: 6スロットグリッド + 選択スロットの所持品リスト。
+// 状態が変わるたび丸ごと作り直す(タイトル中だけの画面なので性能は気にしない)
+function renderEquipScreen() {
+  updateCoinLabels();
+  const slotsEl = document.getElementById('equip-slots');
+  slotsEl.innerHTML = '';
+  for (const slot in EQUIP_SLOTS) {
+    const def = EQUIP_SLOTS[slot];
+    const id = equipSave.equipped[slot];
+    const btn = document.createElement('button');
+    btn.className = 'eq-slot' + (slot === selectedSlot ? ' selected' : '');
+    if (id) btn.style.setProperty('--rc', rarityColor(EQUIP_ITEMS[id].rarity));
+    btn.innerHTML =
+      '<span class="e-icon">' + (id ? EQUIP_ITEMS[id].icon : def.icon) + '</span>' +
+      '<span class="e-body"><span class="e-slotname">' + def.label + '</span><br>' +
+      '<span class="e-item">' + (id ? EQUIP_ITEMS[id].name + ' Lv' + equipSave.items[id].lv : '― なし ―') + '</span></span>';
+    btn.addEventListener('click', () => { selectedSlot = slot; renderEquipScreen(); });
+    slotsEl.appendChild(btn);
+  }
+  equipListEl.innerHTML = '';
+  const order = ['legendary', 'epic', 'rare', 'common'];
+  const owned = Object.keys(EQUIP_ITEMS)
+    .filter((id) => EQUIP_ITEMS[id].slot === selectedSlot && equipSave.items[id])
+    .sort((a, b) => order.indexOf(EQUIP_ITEMS[a].rarity) - order.indexOf(EQUIP_ITEMS[b].rarity));
+  if (!owned.length) {
+    equipListEl.innerHTML = '<div class="eq-empty">' + EQUIP_SLOTS[selectedSlot].label +
+      'をまだ持っていません。ガチャで手に入れましょう</div>';
+    return;
+  }
+  for (const id of owned) {
+    const item = EQUIP_ITEMS[id];
+    const st = equipSave.items[id];
+    const row = document.createElement('div');
+    row.className = 'eq-row';
+    row.style.setProperty('--rc', rarityColor(item.rarity));
+    const info = document.createElement('div');
+    info.className = 'e-info';
+    info.innerHTML =
+      '<div class="e-name">' + item.name + '<span class="e-lv">Lv ' + st.lv + ' / ' + itemLvCap(id) + '</span></div>' +
+      '<div class="e-desc">' + itemDesc(id, st.lv) + '</div>' +
+      '<div class="e-mat">素材 ' + st.mat + ' 個</div>';
+    const btns = document.createElement('div');
+    btns.className = 'e-btns';
+    const eqBtn = document.createElement('button');
+    eqBtn.className = 'e-btn' + (equipSave.equipped[selectedSlot] === id ? ' on' : '');
+    eqBtn.textContent = equipSave.equipped[selectedSlot] === id ? '装備中' : '装備する';
+    eqBtn.disabled = equipSave.equipped[selectedSlot] === id;
+    eqBtn.addEventListener('click', () => { equipItem(id); renderEquipScreen(); });
+    const upBtn = document.createElement('button');
+    upBtn.className = 'e-btn';
+    const cost = upgradeCost(id);
+    if (!cost) {
+      upBtn.textContent = '強化 MAX';
+      upBtn.disabled = true;
+    } else {
+      upBtn.textContent = '強化 (素材' + cost.mat + ' + 💰' + cost.coin + ')';
+      upBtn.disabled = st.mat < cost.mat || equipSave.coins < cost.coin;
+      upBtn.addEventListener('click', () => { upgradeItem(id); renderEquipScreen(); });
+    }
+    btns.appendChild(eqBtn);
+    btns.appendChild(upBtn);
+    row.innerHTML = '<span class="e-icon">' + item.icon + '</span>';
+    row.appendChild(info);
+    row.appendChild(btns);
+    equipListEl.appendChild(row);
+  }
+}
+
+// ガチャ画面: ボタンのコスト表示と disabled をコイン残高から更新
+function renderGachaButtons() {
+  const g = CONFIG.equip.gacha;
+  const b1 = document.getElementById('gacha-pull1');
+  const b10 = document.getElementById('gacha-pull10');
+  b1.textContent = '1回引く 💰' + g.cost1;
+  b10.textContent = '10連 💰' + g.cost10;
+  b1.disabled = equipSave.coins < g.cost1;
+  b10.disabled = equipSave.coins < g.cost10;
+}
+
+// ガチャを引いて結果カードを並べる。カードはスキル3択の card-in を流用して
+// 左上から1枚ずつ跳ねて出る。被りは「→ 素材 +n」表記
+function doGacha(count, cost) {
+  if (equipSave.coins < cost) return;
+  equipSave.coins -= cost;
+  const results = gachaPull(count);   // 中で saveEquip() される(残高減もまとめて保存)
+  gachaResultsEl.innerHTML = '';
+  results.forEach((res, i) => {
+    const item = EQUIP_ITEMS[res.id];
+    const card = document.createElement('div');
+    card.className = 'g-card rarity-' + item.rarity;
+    card.style.setProperty('--rc', rarityColor(item.rarity));
+    card.style.setProperty('--in-delay', (i * 0.12) + 's');
+    card.innerHTML =
+      '<span class="g-icon">' + item.icon + '</span>' +
+      '<span class="g-rarity">' + CONFIG.level.rarity[item.rarity].label + '</span>' +
+      '<span class="g-name">' + item.name + '</span>' +
+      (res.dupe ? '<span class="g-dupe">→ 素材 +' + CONFIG.equip.dupeMat[item.rarity] + '</span>'
+                : '<span class="g-dupe">NEW!</span>');
+    gachaResultsEl.appendChild(card);
+  });
+  updateCoinLabels();
+  renderGachaButtons();
+}
+
+// --- 下部タブバー ---
+// タイトル系画面(戦闘/装備/ガチャ)は常設のタブバーで即切替する。
+// 機能(タブ)を増やすときはここに足す。screen は表示する .screen の id、
+// locked は「近日公開」枠(タップでトーストだけ出す)、main は中央の大きい強調タブ
+const TITLE_TABS = [
+  { id: 'shop',   label: 'ショップ',   icon: '🏪', screen: 'shop-screen' },
+  { id: 'equip',  label: '装備',       icon: '⚔️', screen: 'equip-screen' },
+  { id: 'battle', label: '戦闘',       icon: '🗡️', screen: 'title-screen', main: true },
+  { id: 'rank',   label: 'ランキング', icon: '🏆', locked: true },
+];
+const titleTabbar = document.getElementById('title-tabbar');
+const tabToast = document.getElementById('tab-toast');
+let activeTitleTab = 'battle';
+let tabToastTimeout = null;
+
+function renderTitleTabbar() {
+  titleTabbar.innerHTML = '';
+  for (const tab of TITLE_TABS) {
+    const btn = document.createElement('button');
+    btn.className = 't-tab' + (tab.main ? ' main' : '') + (tab.locked ? ' locked' : '')
+      + (tab.id === activeTitleTab ? ' active' : '');
+    btn.innerHTML = '<span class="t-icon">' + tab.icon + '</span><span class="t-label">' + tab.label + '</span>';
+    btn.addEventListener('click', () => switchTitleTab(tab.id));
+    titleTabbar.appendChild(btn);
+  }
+}
+
+function showTabToast(text) {
+  tabToast.textContent = text;
+  tabToast.style.opacity = '1';
+  clearTimeout(tabToastTimeout);
+  tabToastTimeout = setTimeout(() => { tabToast.style.opacity = '0'; }, 1200);
+}
+
+function switchTitleTab(id) {
+  const tab = TITLE_TABS.find((t) => t.id === id);
+  if (tab.locked) { showTabToast('近日公開!'); return; }
+  activeTitleTab = id;
+  // タイトル系 screen をタブの screen だけ表示に切り替える
+  for (const t of TITLE_TABS) {
+    if (t.screen) document.getElementById(t.screen).style.display = t.id === id ? 'flex' : 'none';
+  }
+  if (id === 'equip') renderEquipScreen();
+  else if (id === 'shop') { updateCoinLabels(); renderGachaButtons(); }
+  else updateCoinLabels();
+  renderTitleTabbar();
+}
+
+document.getElementById('gacha-pull1').addEventListener('click', () => doGacha(1, CONFIG.equip.gacha.cost1));
+document.getElementById('gacha-pull10').addEventListener('click', () => doGacha(10, CONFIG.equip.gacha.cost10));
+renderTitleTabbar();
+titleTabbar.style.display = 'flex';   // 初期表示はタイトルなのでタブバーも出す
+updateCoinLabels();
 
 document.getElementById('start-btn').addEventListener('click', () => startGame(selectedChapter));
 document.getElementById('retry-btn').addEventListener('click', () => startGame(state.chapter));
