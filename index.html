@@ -348,7 +348,8 @@
   /* 下段の出撃バー */
   #title-foot {
     flex: none; width: 100%; display: flex; flex-direction: column; align-items: center; gap: 8px;
-    padding: 12px 20px calc(env(safe-area-inset-bottom) + 14px);
+    /* 下端は常設タブバー(#title-tabbar)のぶん空ける */
+    padding: 12px 20px calc(env(safe-area-inset-bottom) + 78px);
     background: linear-gradient(180deg, rgba(8,24,52,0), rgba(8,24,52,0.6));
   }
   #start-btn {
@@ -358,33 +359,65 @@
   }
   #start-btn .b-sub { font-size: 13px; font-weight: bold; opacity: 0.85; }
   #title-hint { font-size: 11px; color: #cfe6ff; line-height: 1.7; text-align: center; }
-  /* 開始ボタンの上の装備・ガチャ行。コイン残高もここに出す */
-  #title-meta { display: flex; align-items: center; gap: 10px; }
-  .meta-btn {
-    font-family: inherit; font-size: 15px; font-weight: bold; color: #dfe6ff;
-    background: linear-gradient(180deg, #3a4470, #232a4c);
-    border: 1px solid rgba(160,190,255,0.4); border-radius: 12px;
-    padding: 9px 18px; cursor: pointer;
-    box-shadow: 0 3px 10px rgba(0,0,0,0.4);
-  }
-  .meta-btn:active { transform: scale(0.95); }
   .coin-label { font-size: 15px; font-weight: bold; color: #ffe07a; text-shadow: 0 1px 2px rgba(120,70,0,0.6); }
 
-  /* ==== 装備・ガチャ画面 ====
-     タイトルから display 切替だけで往復する(state.phase は 'title' のまま)。
-     レアリティ色はスキルカードと同じく CSS 変数 --rc で流し込む */
+  /* ==== 装備・ガチャ画面と下部タブバー ====
+     タイトル系画面(戦闘=チャプターマップ / 装備 / ガチャ)は下部の常設タブバーで
+     即切替する(state.phase は 'title' のまま)。レアリティ色はスキルカードと
+     同じく CSS 変数 --rc で流し込む */
   #equip-screen, #gacha-screen { display: none; justify-content: flex-start; padding: 0; }
   .meta-head {
     flex: none; width: 100%; display: flex; align-items: center; gap: 12px;
     padding: calc(env(safe-area-inset-top) + 12px) 16px 10px;
   }
   .meta-head .m-title { flex: 1; text-align: left; font-size: 22px; font-weight: 900; color: #ffd76a; }
-  .m-back {
-    font-family: inherit; font-size: 14px; font-weight: bold; color: #dfe6ff;
-    background: rgba(255,255,255,0.1); border: 1px solid rgba(160,190,255,0.4);
-    border-radius: 999px; padding: 7px 16px; cursor: pointer;
+  /* 下部タブバー。タイトル系画面の間だけ表示され、.screen(z-index 10)より上に乗る */
+  #title-tabbar {
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 11;
+    display: none; align-items: flex-end; justify-content: center;
+    padding: 0 6px env(safe-area-inset-bottom);
+    background: linear-gradient(180deg, #1a2140, #10142a);
+    border-top: 1px solid rgba(160,190,255,0.25);
+    box-shadow: 0 -4px 18px rgba(0,0,0,0.45);
   }
-  .m-back:active { transform: scale(0.95); }
+  .t-tab {
+    flex: 1; max-width: 96px; min-width: 0;
+    display: flex; flex-direction: column; align-items: center; gap: 2px;
+    font-family: inherit; color: #8fa2c8; background: none; border: none;
+    padding: 8px 2px 7px; cursor: pointer;
+  }
+  .t-tab:active { transform: scale(0.94); }
+  .t-tab .t-icon { font-size: 24px; line-height: 1.2; }
+  .t-tab .t-label { font-size: 10px; font-weight: bold; white-space: nowrap; }
+  .t-tab.active { color: #ffd76a; }
+  .t-tab.active .t-icon { text-shadow: 0 0 12px rgba(255,200,80,0.8); }
+  /* 中央の「戦闘」タブ: 一回り大きい金色バッジでせり上げる(参考: アーチャー伝説2) */
+  .t-tab.main { position: relative; padding-top: 0; }
+  .t-tab.main .t-icon {
+    font-size: 30px; width: 62px; height: 62px; margin-top: -22px;
+    display: flex; align-items: center; justify-content: center;
+    background: linear-gradient(180deg, #3a4470, #232a4c);
+    border: 2px solid rgba(160,190,255,0.4); border-radius: 18px;
+    box-shadow: 0 4px 14px rgba(0,0,0,0.5);
+  }
+  .t-tab.main.active .t-icon {
+    background: linear-gradient(180deg, #ffd76a, #f0a830);
+    border-color: #fff0c0;
+    box-shadow: 0 4px 18px rgba(255,170,0,0.55);
+  }
+  /* 近日公開のロックタブ: グレー+🔒バッジ(チャプター島の未解放と同じ流儀) */
+  .t-tab.locked { filter: grayscale(1); opacity: 0.55; }
+  .t-tab.locked .t-icon::after { content: '🔒'; font-size: 11px; position: relative; top: -4px; }
+  /* ロックタブを押したときの「近日公開!」吹き出し。1.2秒で消える */
+  #tab-toast {
+    position: fixed; left: 50%; transform: translateX(-50%);
+    bottom: calc(env(safe-area-inset-bottom) + 74px); z-index: 12;
+    background: rgba(10,14,30,0.92); color: #ffd76a;
+    font-size: 13px; font-weight: bold;
+    border: 1px solid rgba(255,215,106,0.5); border-radius: 999px;
+    padding: 8px 18px; pointer-events: none;
+    opacity: 0; transition: opacity 0.25s;
+  }
   /* 6スロット(2列×3段)。装備中アイテムの枠がレアリティ色になる */
   #equip-slots {
     flex: none; display: grid; grid-template-columns: repeat(2, 1fr);
@@ -407,7 +440,7 @@
   #equip-list {
     flex: 1; width: 100%; max-width: 480px; min-height: 0;
     overflow-y: auto; -webkit-overflow-scrolling: touch;
-    padding: 0 14px calc(env(safe-area-inset-bottom) + 14px);
+    padding: 0 14px calc(env(safe-area-inset-bottom) + 78px);
   }
   .eq-row {
     display: flex; align-items: center; gap: 10px; text-align: left;
@@ -434,7 +467,7 @@
   #gacha-body {
     flex: 1; width: 100%; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch;
     display: flex; flex-direction: column; align-items: center; gap: 14px;
-    padding: 8px 14px calc(env(safe-area-inset-bottom) + 14px);
+    padding: 8px 14px calc(env(safe-area-inset-bottom) + 78px);
   }
   #gacha-btns { display: flex; gap: 12px; flex: none; }
   #gacha-btns .btn { font-size: 16px; padding: 12px 26px; }
@@ -597,11 +630,7 @@
   </div>
   <div id="chapter-map"><div id="chapter-select"></div></div>
   <div id="title-foot">
-    <div id="title-meta">
-      <button id="equip-btn" class="meta-btn">⚔️ 装備</button>
-      <button id="gacha-btn" class="meta-btn">🎰 ガチャ</button>
-      <span id="title-coins" class="coin-label"></span>
-    </div>
+    <span id="title-coins" class="coin-label"></span>
     <button id="start-btn" class="btn"><span>開始</span><span class="b-sub" id="start-btn-sub"></span></button>
     <p id="title-hint">
       移動: WASD / 矢印キー / 仮想ジョイスティック ・ 立ち止まると自動攻撃!<br>
@@ -612,8 +641,7 @@
 
 <div id="equip-screen" class="screen">
   <div class="meta-head">
-    <button id="equip-back" class="m-back">← 戻る</button>
-    <span class="m-title">装備</span>
+    <span class="m-title">⚔️ 装備</span>
     <span id="equip-coins" class="coin-label"></span>
   </div>
   <div id="equip-slots"></div>
@@ -622,8 +650,7 @@
 
 <div id="gacha-screen" class="screen">
   <div class="meta-head">
-    <button id="gacha-back" class="m-back">← 戻る</button>
-    <span class="m-title">ガチャ</span>
+    <span class="m-title">🎰 ガチャ</span>
     <span id="gacha-coins" class="coin-label"></span>
   </div>
   <div id="gacha-body">
@@ -635,6 +662,10 @@
     <div id="gacha-results"></div>
   </div>
 </div>
+
+<!-- タイトル下部の常設タブバー(中身は renderTitleTabbar() が TITLE_TABS から生成) -->
+<div id="title-tabbar"></div>
+<div id="tab-toast"></div>
 
 <div id="gameover-screen" class="screen">
   <div id="go-title">GAME OVER</div>
@@ -5156,6 +5187,9 @@ function startGame(chapterIndex) {
   resetDamageTexts();
   resetFx();
   titleScreen.style.display = 'none';
+  equipScreen.style.display = 'none';
+  gachaScreen.style.display = 'none';
+  titleTabbar.style.display = 'none';
   gameoverScreen.style.display = 'none';
   levelupScreen.style.display = 'none';
   clearScreen.style.display = 'none';
@@ -5226,13 +5260,11 @@ function goTitle() {
   despawnGuardians();                // タイトルにお供だけ浮いていないように
   state.phase = 'title';
   renderChapterSelect();             // 解放されたチャプターを反映
-  updateCoinLabels();                // ラン中に貯めたコインをタイトルに反映
   clearScreen.style.display = 'none';
   gameoverScreen.style.display = 'none';
-  equipScreen.style.display = 'none';
-  gachaScreen.style.display = 'none';
   hudEl.style.display = 'none';
-  titleScreen.style.display = 'flex';
+  titleTabbar.style.display = 'flex';
+  switchTitleTab('battle');          // 戦闘タブ(チャプターマップ)から再開。コイン表示も同期される
 }
 
 // ---------------------------------------------------------------------
@@ -5356,30 +5388,59 @@ function doGacha(count, cost) {
   renderGachaButtons();
 }
 
-function openEquipScreen() {
-  renderEquipScreen();
-  titleScreen.style.display = 'none';
-  equipScreen.style.display = 'flex';
+// --- 下部タブバー ---
+// タイトル系画面(戦闘/装備/ガチャ)は常設のタブバーで即切替する。
+// 機能(タブ)を増やすときはここに足す。screen は表示する .screen の id、
+// locked は「近日公開」枠(タップでトーストだけ出す)、main は中央の大きい強調タブ
+const TITLE_TABS = [
+  { id: 'shop',   label: 'ショップ',   icon: '🏪', locked: true },
+  { id: 'equip',  label: '装備',       icon: '⚔️', screen: 'equip-screen' },
+  { id: 'battle', label: '戦闘',       icon: '🗡️', screen: 'title-screen', main: true },
+  { id: 'gacha',  label: 'ガチャ',     icon: '🎰', screen: 'gacha-screen' },
+  { id: 'rank',   label: 'ランキング', icon: '🏆', locked: true },
+];
+const titleTabbar = document.getElementById('title-tabbar');
+const tabToast = document.getElementById('tab-toast');
+let activeTitleTab = 'battle';
+let tabToastTimeout = null;
+
+function renderTitleTabbar() {
+  titleTabbar.innerHTML = '';
+  for (const tab of TITLE_TABS) {
+    const btn = document.createElement('button');
+    btn.className = 't-tab' + (tab.main ? ' main' : '') + (tab.locked ? ' locked' : '')
+      + (tab.id === activeTitleTab ? ' active' : '');
+    btn.innerHTML = '<span class="t-icon">' + tab.icon + '</span><span class="t-label">' + tab.label + '</span>';
+    btn.addEventListener('click', () => switchTitleTab(tab.id));
+    titleTabbar.appendChild(btn);
+  }
 }
-function openGachaScreen() {
-  gachaResultsEl.innerHTML = '';
-  updateCoinLabels();
-  renderGachaButtons();
-  titleScreen.style.display = 'none';
-  gachaScreen.style.display = 'flex';
+
+function showTabToast(text) {
+  tabToast.textContent = text;
+  tabToast.style.opacity = '1';
+  clearTimeout(tabToastTimeout);
+  tabToastTimeout = setTimeout(() => { tabToast.style.opacity = '0'; }, 1200);
 }
-function closeMetaScreen() {
-  equipScreen.style.display = 'none';
-  gachaScreen.style.display = 'none';
-  updateCoinLabels();
-  titleScreen.style.display = 'flex';
+
+function switchTitleTab(id) {
+  const tab = TITLE_TABS.find((t) => t.id === id);
+  if (tab.locked) { showTabToast('近日公開!'); return; }
+  activeTitleTab = id;
+  // タイトル系 screen をタブの screen だけ表示に切り替える
+  for (const t of TITLE_TABS) {
+    if (t.screen) document.getElementById(t.screen).style.display = t.id === id ? 'flex' : 'none';
+  }
+  if (id === 'equip') renderEquipScreen();
+  else if (id === 'gacha') { updateCoinLabels(); renderGachaButtons(); }
+  else updateCoinLabels();
+  renderTitleTabbar();
 }
-document.getElementById('equip-btn').addEventListener('click', openEquipScreen);
-document.getElementById('gacha-btn').addEventListener('click', openGachaScreen);
-document.getElementById('equip-back').addEventListener('click', closeMetaScreen);
-document.getElementById('gacha-back').addEventListener('click', closeMetaScreen);
+
 document.getElementById('gacha-pull1').addEventListener('click', () => doGacha(1, CONFIG.equip.gacha.cost1));
 document.getElementById('gacha-pull10').addEventListener('click', () => doGacha(10, CONFIG.equip.gacha.cost10));
+renderTitleTabbar();
+titleTabbar.style.display = 'flex';   // 初期表示はタイトルなのでタブバーも出す
 updateCoinLabels();
 
 document.getElementById('start-btn').addEventListener('click', () => startGame(selectedChapter));

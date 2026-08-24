@@ -167,8 +167,12 @@ GitHub Pages で公開する前提の、ビルド不要な単一 `index.html` �
   - 保存は localStorage キー `bulletArcher.equip`(バージョン付きJSON
     `{v:1, coins, items:{id:{lv,mat}}, equipped:{slot:id}}`)。読み込みは try/catch +
     検証(未知id読み捨て・lv clamp・スロット不一致の装備解除)で壊れたデータでも初期状態で起動する
-  - UI はタイトルから `#equip-screen` / `#gacha-screen` を display 切替で開く(`state.phase` は
-    'title' のまま。新しい phase は増やさない)。カードの枠色は CSS 変数 `--rc`、
+  - UI は**下部常設タブバー**(`#title-tabbar`。定義は `TITLE_TABS` 配列でデータ駆動、
+    機能を増やすときはタブを足す): ショップ(🔒近日公開)/ 装備 / 戦闘(中央の大きい強調タブ =
+    チャプターマップ)/ ガチャ / ランキング(🔒近日公開)。タブは `switchTitleTab()` が
+    タイトル系 screen の display を切り替えるだけ(`state.phase` は 'title' のまま。
+    新しい phase は増やさない)。ロックタブはタップで「近日公開!」トースト(`#tab-toast`)。
+    タブバーはラン開始で隠れ `goTitle()` で戻る。カードの枠色は CSS 変数 `--rc`、
     ガチャ結果の出現はスキル3択の `card-in` を流用。装備画面は6スロットグリッド+
     選択スロットの所持品リスト(装備・強化ボタン)
   - 開発パネルの火力表(`renderDbgPower()`)冒頭に装備欄あり。装備タブでコイン付与・全装備付与・
