@@ -431,13 +431,11 @@
   }
   .eq-slot {
     display: flex; align-items: center; gap: 8px; min-width: 0;
-    font-family: inherit; color: #fff; text-align: left; cursor: pointer;
+    color: #fff; text-align: left;
     background: linear-gradient(180deg, rgba(40,48,88,0.95), rgba(22,26,52,0.95));
     border: 2px solid var(--rc, rgba(160,190,255,0.35));
     border-radius: 12px; padding: 8px 10px;
   }
-  .eq-slot:active { transform: scale(0.97); }
-  .eq-slot.selected { background: linear-gradient(180deg, rgba(64,76,132,0.95), rgba(36,44,86,0.95)); box-shadow: 0 0 10px var(--rc, rgba(160,190,255,0.4)); }
   .eq-slot .e-icon { font-size: 24px; flex: none; }
   .eq-slot .e-body { min-width: 0; }
   .eq-slot .e-slotname { font-size: 10px; color: #9ab; letter-spacing: 0.1em; }
@@ -456,6 +454,12 @@
   .eq-row .e-icon { font-size: 26px; flex: none; }
   .eq-row .e-info { flex: 1; min-width: 0; }
   .eq-row .e-name { font-size: 14px; font-weight: bold; color: var(--rc, #fff); }
+  /* 一覧は全部位が混ざるので、行ごとに部位のチップを付ける */
+  .eq-row .e-slot-chip {
+    display: inline-block; font-size: 10px; font-weight: bold; color: #cfe0ff;
+    background: rgba(160,190,255,0.16); border-radius: 6px;
+    padding: 1px 6px; margin-right: 6px; vertical-align: 1px;
+  }
   .eq-row .e-name .e-lv { font-size: 11px; color: #9fe08a; margin-left: 6px; }
   .eq-row .e-desc { font-size: 11px; color: #bcd; line-height: 1.5; }
   .eq-row .e-mat { font-size: 10px; color: #9ab; }
@@ -5303,7 +5307,6 @@ const equipScreen = document.getElementById('equip-screen');
 const shopScreen = document.getElementById('shop-screen');
 const equipListEl = document.getElementById('equip-list');
 const gachaResultsEl = document.getElementById('gacha-results');
-let selectedSlot = 'weapon';         // 装備画面で開いているスロット
 
 function rarityColor(r) { return CONFIG.level.rarity[r].color; }
 function updateCoinLabels() {
@@ -5313,7 +5316,8 @@ function updateCoinLabels() {
   document.getElementById('shop-coins').textContent = t;
 }
 
-// 装備画面: 6スロットグリッド + 選択スロットの所持品リスト。
+// 装備画面: 上に6スロットグリッド(装備中の表示のみ)+ 下に所持している全装備の一覧。
+// スロットを選ぶ操作は無く、一覧から「装備する」を押すだけ(装備先はアイテムの slot で決まる)。
 // 状態が変わるたび丸ごと作り直す(タイトル中だけの画面なので性能は気にしない)
 // スロットグリッドの表示順(2列グリッドの行優先で埋まるので、この並びで
 // 左列 = 武器/お守り/指輪、右列 = 兜/鎧/靴 になる)
@@ -5325,44 +5329,48 @@ function renderEquipScreen() {
   for (const slot of EQUIP_SLOT_LAYOUT) {
     const def = EQUIP_SLOTS[slot];
     const id = equipSave.equipped[slot];
-    const btn = document.createElement('button');
-    btn.className = 'eq-slot' + (slot === selectedSlot ? ' selected' : '');
-    if (id) btn.style.setProperty('--rc', rarityColor(EQUIP_ITEMS[id].rarity));
-    btn.innerHTML =
+    const cell = document.createElement('div');
+    cell.className = 'eq-slot';
+    if (id) cell.style.setProperty('--rc', rarityColor(EQUIP_ITEMS[id].rarity));
+    cell.innerHTML =
       '<span class="e-icon">' + (id ? EQUIP_ITEMS[id].icon : def.icon) + '</span>' +
       '<span class="e-body"><span class="e-slotname">' + def.label + '</span><br>' +
       '<span class="e-item">' + (id ? EQUIP_ITEMS[id].name + ' Lv' + equipSave.items[id].lv : '― なし ―') + '</span></span>';
-    btn.addEventListener('click', () => { selectedSlot = slot; renderEquipScreen(); });
-    slotsEl.appendChild(btn);
+    slotsEl.appendChild(cell);
   }
   equipListEl.innerHTML = '';
+  // 所持している全装備をレアリティの高い順 → スロット順で一覧する
   const order = ['legendary', 'epic', 'rare', 'common'];
+  const slotOrder = Object.keys(EQUIP_SLOTS);
   const owned = Object.keys(EQUIP_ITEMS)
-    .filter((id) => EQUIP_ITEMS[id].slot === selectedSlot && equipSave.items[id])
-    .sort((a, b) => order.indexOf(EQUIP_ITEMS[a].rarity) - order.indexOf(EQUIP_ITEMS[b].rarity));
+    .filter((id) => equipSave.items[id])
+    .sort((a, b) =>
+      (order.indexOf(EQUIP_ITEMS[a].rarity) - order.indexOf(EQUIP_ITEMS[b].rarity))
+      || (slotOrder.indexOf(EQUIP_ITEMS[a].slot) - slotOrder.indexOf(EQUIP_ITEMS[b].slot)));
   if (!owned.length) {
-    equipListEl.innerHTML = '<div class="eq-empty">' + EQUIP_SLOTS[selectedSlot].label +
-      'をまだ持っていません。ガチャで手に入れましょう</div>';
+    equipListEl.innerHTML = '<div class="eq-empty">装備をまだ持っていません。ガチャで手に入れましょう</div>';
     return;
   }
   for (const id of owned) {
     const item = EQUIP_ITEMS[id];
     const st = equipSave.items[id];
+    const equipped = equipSave.equipped[item.slot] === id;
     const row = document.createElement('div');
     row.className = 'eq-row';
     row.style.setProperty('--rc', rarityColor(item.rarity));
     const info = document.createElement('div');
     info.className = 'e-info';
     info.innerHTML =
-      '<div class="e-name">' + item.name + '<span class="e-lv">Lv ' + st.lv + ' / ' + itemLvCap(id) + '</span></div>' +
+      '<div class="e-name"><span class="e-slot-chip">' + EQUIP_SLOTS[item.slot].label + '</span>' +
+      item.name + '<span class="e-lv">Lv ' + st.lv + ' / ' + itemLvCap(id) + '</span></div>' +
       '<div class="e-desc">' + itemDesc(id, st.lv) + '</div>' +
       '<div class="e-mat">素材 ' + st.mat + ' 個</div>';
     const btns = document.createElement('div');
     btns.className = 'e-btns';
     const eqBtn = document.createElement('button');
-    eqBtn.className = 'e-btn' + (equipSave.equipped[selectedSlot] === id ? ' on' : '');
-    eqBtn.textContent = equipSave.equipped[selectedSlot] === id ? '装備中' : '装備する';
-    eqBtn.disabled = equipSave.equipped[selectedSlot] === id;
+    eqBtn.className = 'e-btn' + (equipped ? ' on' : '');
+    eqBtn.textContent = equipped ? '装備中' : '装備する';
+    eqBtn.disabled = equipped;
     eqBtn.addEventListener('click', () => { equipItem(id); renderEquipScreen(); });
     const upBtn = document.createElement('button');
     upBtn.className = 'e-btn';
