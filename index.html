@@ -502,6 +502,13 @@
   .g-card .g-dupe { font-size: 9px; color: #9fe08a; }
 
   /* ===== [DEBUG] スキル自由取得(使用感テスト用。リリース時にこのブロックを削除) ===== */
+  /* ショップ画面の無料ガチャトグル(開発用と分かる点線枠) */
+  #dbg-free-gacha {
+    font-family: inherit; font-size: 12px; font-weight: bold; color: #9ab;
+    background: rgba(255,255,255,0.06); border: 1px dashed rgba(160,190,255,0.5);
+    border-radius: 999px; padding: 6px 14px; cursor: pointer; flex: none;
+  }
+  #dbg-free-gacha.on { color: #ffd76a; border-color: rgba(255,215,106,0.7); }
   #dbg-skill-btn {
     margin-top: 6px; padding: 4px 10px; font-size: 12px;
     background: #2a3550; color: #cfe0ff; border: 1px solid #4a5a80; border-radius: 6px;
@@ -666,6 +673,8 @@
       <button id="gacha-pull10" class="btn sub"></button>
     </div>
     <div id="gacha-hint">被った装備はその装備の強化素材に自動変換されます</div>
+    <!-- [DEBUG] 無料ガチャトグル(使用感テスト用。リリース時に削除) -->
+    <button id="dbg-free-gacha">🛠 無料ガチャ: OFF</button>
     <div id="gacha-results"></div>
   </div>
 </div>
@@ -4648,10 +4657,20 @@ function renderDbgActiveTab() {
   else renderDbgPanel();
 }
 
-// --- 装備タブ: コイン・アイテムの付与とセーブ初期化(テスト用) ---
-// 無料ガチャ: ON の間はガチャがコインを消費せず何回でも引ける
-// (doGacha / renderGachaButtons が [DEBUG] マーカー行で参照。リロードで OFF に戻る)
+// --- 無料ガチャ: ON の間はガチャがコインを消費せず何回でも引ける ---
+// トグルはショップ画面のガチャボタンの下(ガチャはタイトルでしか引けないので、
+// 戦闘中も開ける開発パネルではなく使う場所に置く)。doGacha / renderGachaButtons が
+// gachaIsFree() 経由で参照。リロードで OFF に戻る
 let dbgFreeGacha = false;
+const dbgFreeGachaBtn = document.getElementById('dbg-free-gacha');
+dbgFreeGachaBtn.addEventListener('click', () => {
+  dbgFreeGacha = !dbgFreeGacha;
+  dbgFreeGachaBtn.textContent = '🛠 無料ガチャ: ' + (dbgFreeGacha ? 'ON' : 'OFF');
+  dbgFreeGachaBtn.classList.toggle('on', dbgFreeGacha);
+  renderGachaButtons();              // ガチャボタンの表示(無料🛠/disabled)も即追従
+});
+
+// --- 装備タブ: コイン・アイテムの付与とセーブ初期化(テスト用) ---
 function renderDbgEquip() {
   const el = dbgTabEls.equip;
   el.innerHTML = '<div class="dbg-note">コイン ' + equipSave.coins + ' / 所持 ' +
@@ -4665,10 +4684,6 @@ function renderDbgEquip() {
     el.appendChild(b);
   };
   mk('コイン +1000', () => addCoins(1000));
-  mk('無料ガチャ: ' + (dbgFreeGacha ? 'ON 🛠' : 'OFF'), () => {
-    dbgFreeGacha = !dbgFreeGacha;
-    renderGachaButtons();              // ショップのボタン表示(無料🛠/disabled)も即追従
-  });
   mk('全装備を付与(素材+5)', () => {
     for (const id in EQUIP_ITEMS) {
       if (!equipSave.items[id]) equipSave.items[id] = { lv: 1, mat: 0 };
