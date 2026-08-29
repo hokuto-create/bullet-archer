@@ -2280,15 +2280,18 @@ const EQUIP_SLOTS = {
 // ボーナスの効果キーはアイテムと同じ(atk/hp/cut/spd/rate/summon/graze)で、
 // 強化Lvでは伸びない固定値。rarity はその系統の全部位のレアリティで、
 // 通常装備3系統(狩人/銀狼/星詠)と S級装備3系統(龍帝/鳳凰/月虹)がある。
-// 系統を増やすときはここにエントリを足し、EQUIP_ITEMS に series 付きの6部位を足す
+// 系統を増やすときはここにエントリを足し、EQUIP_ITEMS に series 付きの6部位を足す。
+// 通常3系統は S級3系統の**完全下位互換**: 部位ごとの効果キーもボーナス段の効果キーも
+// 対になる S級系統と同一で、数値だけすべて下(狩人⊂龍帝 / 銀狼⊂鳳凰 / 星詠⊂月虹)。
+// 通常で組んだセットの上位を引いたらそのまま置き換えられる、という導線を作る
 const EQUIP_SERIES = {
-  // --- 通常装備3系統 ---
-  hunt:  { label: '狩人', rarity: 'common', bonuses: [   // 攻撃寄りの入門セット
+  // --- 通常装備3系統(S級の下位版) ---
+  hunt:  { label: '狩人', rarity: 'common', bonuses: [   // 龍帝の下位版(攻撃)
     { need: 2, atk: 0.02 }, { need: 4, rate: 0.03 }, { need: 6, atk: 0.05 }] },
-  wolf:  { label: '銀狼', rarity: 'rare',   bonuses: [   // 防御・機動寄り
-    { need: 2, hp: 10 }, { need: 4, spd: 0.04 }, { need: 6, cut: 0.05, hp: 15 }] },
-  seer:  { label: '星詠', rarity: 'epic',   bonuses: [   // 召喚寄り
-    { need: 2, summon: 0.06 }, { need: 4, atk: 0.05 }, { need: 6, summon: 0.12, graze: 0.2 }] },
+  wolf:  { label: '銀狼', rarity: 'rare',   bonuses: [   // 鳳凰の下位版(生存)
+    { need: 2, hp: 10 }, { need: 4, cut: 0.02 }, { need: 6, hp: 15, cut: 0.02 }] },
+  seer:  { label: '星詠', rarity: 'epic',   bonuses: [   // 月虹の下位版(召喚・グレイズ)
+    { need: 2, summon: 0.06 }, { need: 4, graze: 0.15 }, { need: 6, summon: 0.1, graze: 0.15 }] },
   // --- S級装備3系統 ---
   ryu:   { label: '龍帝', rarity: 'sclass', bonuses: [   // 攻撃特化
     { need: 2, atk: 0.05 }, { need: 4, rate: 0.06 }, { need: 6, atk: 0.12 }] },
@@ -2338,28 +2341,30 @@ const EQUIP_ITEMS = {
 
   // ===== 系統装備(EQUIP_SERIES 参照)。series を持つアイテムはそろえると系統ボーナス =====
   // 基礎値は単品だと同レアリティの無系統品と同格〜わずかに下で、セットボーナスぶんで上回る設計。
-  // S級は legendary の約1.3〜1.4倍の基礎値+副ステータス持ち
-  // --- 通常: 狩人系統(common・攻撃寄り) ---
+  // S級は legendary の約1.3〜1.4倍の基礎値+副ステータス持ち。
+  // 通常3系統は対になる S級系統の完全下位互換: 部位ごとの効果キーを S級側と同一にし、
+  // 数値だけすべて下げてある(EQUIP_SERIES のコメント参照)
+  // --- 通常: 狩人系統(common。龍帝の下位版 = 攻撃) ---
   hunt_bow:     { slot: 'weapon', icon: '🏹', name: '狩人の短弓',     rarity: 'common', series: 'hunt', atk: 0.06 },
-  hunt_helm:    { slot: 'helmet', icon: '🪶', name: '狩人の羽根帽',   rarity: 'common', series: 'hunt', hp: 10 },
-  hunt_mail:    { slot: 'armor',  icon: '🦌', name: '狩人の鹿革胴着', rarity: 'common', series: 'hunt', cut: 0.03 },
-  hunt_boots:   { slot: 'boots',  icon: '🥾', name: '狩人の革脚絆',   rarity: 'common', series: 'hunt', spd: 0.05 },
-  hunt_ring:    { slot: 'ring',   icon: '🦴', name: '狩人の骨指輪',   rarity: 'common', series: 'hunt', rate: 0.05 },
-  hunt_charm:   { slot: 'amulet', icon: '🐺', name: '狩人の牙飾り',   rarity: 'common', series: 'hunt', summon: 0.06 },
-  // --- 通常: 銀狼系統(rare・防御と機動) ---
-  wolf_bow:     { slot: 'weapon', icon: '🌨️', name: '銀狼の牙弓',     rarity: 'rare', series: 'wolf', atk: 0.10 },
+  hunt_helm:    { slot: 'helmet', icon: '🪶', name: '狩人の羽根帽',   rarity: 'common', series: 'hunt', hp: 10, atk: 0.01 },
+  hunt_mail:    { slot: 'armor',  icon: '🦌', name: '狩人の鹿革胴着', rarity: 'common', series: 'hunt', cut: 0.03, atk: 0.01 },
+  hunt_boots:   { slot: 'boots',  icon: '🥾', name: '狩人の革脚絆',   rarity: 'common', series: 'hunt', spd: 0.05, atk: 0.01 },
+  hunt_ring:    { slot: 'ring',   icon: '🦴', name: '狩人の骨指輪',   rarity: 'common', series: 'hunt', rate: 0.05, atk: 0.01 },
+  hunt_charm:   { slot: 'amulet', icon: '🐺', name: '狩人の牙飾り',   rarity: 'common', series: 'hunt', summon: 0.06, atk: 0.01 },
+  // --- 通常: 銀狼系統(rare。鳳凰の下位版 = 生存) ---
+  wolf_bow:     { slot: 'weapon', icon: '🌨️', name: '銀狼の牙弓',     rarity: 'rare', series: 'wolf', atk: 0.10, hp: 4 },
   wolf_helm:    { slot: 'helmet', icon: '🐾', name: '銀狼の毛皮兜',   rarity: 'rare', series: 'wolf', hp: 20 },
   wolf_mail:    { slot: 'armor',  icon: '🧥', name: '銀狼の外套',     rarity: 'rare', series: 'wolf', cut: 0.06, hp: 8 },
-  wolf_boots:   { slot: 'boots',  icon: '💨', name: '銀狼の疾走靴',   rarity: 'rare', series: 'wolf', spd: 0.08 },
-  wolf_ring:    { slot: 'ring',   icon: '🌘', name: '銀狼の月牙輪',   rarity: 'rare', series: 'wolf', rate: 0.08 },
-  wolf_charm:   { slot: 'amulet', icon: '🎐', name: '銀狼の遠吠え笛', rarity: 'rare', series: 'wolf', summon: 0.10 },
-  // --- 通常: 星詠系統(epic・召喚寄り) ---
-  seer_bow:     { slot: 'weapon', icon: '✨', name: '星詠の宝弓',     rarity: 'epic', series: 'seer', atk: 0.15 },
-  seer_helm:    { slot: 'helmet', icon: '⭐', name: '星詠の司祭冠',   rarity: 'epic', series: 'seer', hp: 32 },
-  seer_mail:    { slot: 'armor',  icon: '🔭', name: '星詠の観星衣',   rarity: 'epic', series: 'seer', cut: 0.10, hp: 12 },
+  wolf_boots:   { slot: 'boots',  icon: '💨', name: '銀狼の疾走靴',   rarity: 'rare', series: 'wolf', spd: 0.08, hp: 3 },
+  wolf_ring:    { slot: 'ring',   icon: '🌘', name: '銀狼の月牙輪',   rarity: 'rare', series: 'wolf', rate: 0.08, hp: 3 },
+  wolf_charm:   { slot: 'amulet', icon: '🎐', name: '銀狼の遠吠え笛', rarity: 'rare', series: 'wolf', summon: 0.10, hp: 4 },
+  // --- 通常: 星詠系統(epic。月虹の下位版 = 召喚・グレイズ) ---
+  seer_bow:     { slot: 'weapon', icon: '✨', name: '星詠の宝弓',     rarity: 'epic', series: 'seer', atk: 0.15, graze: 0.05 },
+  seer_helm:    { slot: 'helmet', icon: '⭐', name: '星詠の司祭冠',   rarity: 'epic', series: 'seer', hp: 32, summon: 0.03 },
+  seer_mail:    { slot: 'armor',  icon: '🔭', name: '星詠の観星衣',   rarity: 'epic', series: 'seer', cut: 0.10, summon: 0.03 },
   seer_boots:   { slot: 'boots',  icon: '☁️', name: '星詠の雲沓',     rarity: 'epic', series: 'seer', spd: 0.12 },
-  seer_ring:    { slot: 'ring',   icon: '🪐', name: '星詠の連星環',   rarity: 'epic', series: 'seer', rate: 0.12 },
-  seer_charm:   { slot: 'amulet', icon: '🌟', name: '星詠の星屑袋',   rarity: 'epic', series: 'seer', summon: 0.14 },
+  seer_ring:    { slot: 'ring',   icon: '🪐', name: '星詠の連星環',   rarity: 'epic', series: 'seer', rate: 0.12, summon: 0.03 },
+  seer_charm:   { slot: 'amulet', icon: '🌟', name: '星詠の星屑袋',   rarity: 'epic', series: 'seer', summon: 0.14, graze: 0.1 },
   // --- S級: 龍帝系統(攻撃特化。副ステータスも攻撃) ---
   ryu_bow:      { slot: 'weapon', icon: '🐉', name: '龍帝の焔弓',     rarity: 'sclass', series: 'ryu', atk: 0.30 },
   ryu_helm:     { slot: 'helmet', icon: '🐲', name: '龍帝の角冑',     rarity: 'sclass', series: 'ryu', hp: 60, atk: 0.04 },
