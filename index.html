@@ -482,6 +482,8 @@
   .series-row .sr-bonus { white-space: nowrap; }
   .series-row .sr-bonus.on { color: #9fe08a; font-weight: bold; }
   .eq-row .e-desc { font-size: 11px; color: #bcd; line-height: 1.5; }
+  /* 品質ボーナス(レア度スキル)の行。効果ごとにその段のレア度色が付く */
+  .eq-row .e-quality { font-size: 10px; color: #9ab; line-height: 1.5; }
   .eq-row .e-mat { font-size: 10px; color: #9ab; }
   .eq-row .e-btns { display: flex; flex-direction: column; gap: 5px; flex: none; }
   .e-btn {
@@ -2301,6 +2303,64 @@ const EQUIP_SERIES = {
     { need: 2, summon: 0.08 }, { need: 4, graze: 0.3 }, { need: 6, summon: 0.15, graze: 0.3 }] },
 };
 
+// 品質ボーナス(レア度スキル)。部位ごとにレア度の段の梯子を持ち、アイテムには
+// **自分のレア度以下の段が全部**乗る(高レアほど効果行が増える。アーチャー伝説2の
+// 品質スキル方式)。同部位ならレア度が上のアイテムが必ず下位互換を包含するので、
+// 系統の「通常⊂S級」の関係もそのまま保たれる。値は強化Lvでは伸びない固定値で、
+// 効果キーはアイテム・系統ボーナスと同じ。段を増やすときはここに足す
+const EQUIP_QUALITY = {
+  weapon: [
+    { rarity: 'common',    atk: 0.02 },
+    { rarity: 'rare',      rate: 0.03 },
+    { rarity: 'epic',      atk: 0.05 },
+    { rarity: 'legendary', graze: 0.1 },
+    { rarity: 'sclass',    atk: 0.10 },
+  ],
+  helmet: [
+    { rarity: 'common',    hp: 5 },
+    { rarity: 'rare',      hp: 8 },
+    { rarity: 'epic',      cut: 0.02 },
+    { rarity: 'legendary', hp: 15 },
+    { rarity: 'sclass',    hp: 25 },
+  ],
+  armor: [
+    { rarity: 'common',    hp: 5 },
+    { rarity: 'rare',      cut: 0.02 },
+    { rarity: 'epic',      hp: 10 },
+    { rarity: 'legendary', cut: 0.04 },
+    { rarity: 'sclass',    cut: 0.06, hp: 15 },
+  ],
+  boots: [
+    { rarity: 'common',    spd: 0.02 },
+    { rarity: 'rare',      spd: 0.03 },
+    { rarity: 'epic',      hp: 8 },
+    { rarity: 'legendary', spd: 0.05 },
+    { rarity: 'sclass',    spd: 0.08 },
+  ],
+  ring: [
+    { rarity: 'common',    rate: 0.02 },
+    { rarity: 'rare',      atk: 0.02 },
+    { rarity: 'epic',      rate: 0.04 },
+    { rarity: 'legendary', rate: 0.06 },
+    { rarity: 'sclass',    rate: 0.08, atk: 0.04 },
+  ],
+  amulet: [
+    { rarity: 'common',    summon: 0.03 },
+    { rarity: 'rare',      summon: 0.04 },
+    { rarity: 'epic',      graze: 0.1 },
+    { rarity: 'legendary', summon: 0.08 },
+    { rarity: 'sclass',    summon: 0.12, graze: 0.1 },
+  ],
+};
+
+// レア度の序列(CONFIG.level.rarity の定義順 = common < rare < epic < legendary < sclass)
+function rarityIndex(r) { return Object.keys(CONFIG.level.rarity).indexOf(r); }
+// そのアイテムに乗っている品質ボーナス段(自分のレア度以下の全段)
+function qualityBonuses(id) {
+  const it = EQUIP_ITEMS[id];
+  return EQUIP_QUALITY[it.slot].filter((q) => rarityIndex(q.rarity) <= rarityIndex(it.rarity));
+}
+
 // 装備アイテム(データ駆動: 増やすときはここにオブジェクトを足す)。
 // レアリティはアイテム固定(SKILLS と同じ流儀)。数値は Lv1 の基礎値で、
 // 強化1Lvごとに基礎値の CONFIG.equip.growthPerLv 倍ずつ伸びる(itemStatAt)。
@@ -2412,7 +2472,8 @@ function itemDesc(id, lv) {
     .join('・');
 }
 function itemLvCap(id) { return CONFIG.equip.lvCap[EQUIP_ITEMS[id].rarity]; }
-// 系統ボーナス1段({need, atk, ...})の効果説明。EQUIP_STAT_DEFS を共用する
+// 効果束({atk, hp, ...} + 余分なキーは無視)の説明文。系統ボーナス1段にも
+// 品質ボーナス1段にも使う。EQUIP_STAT_DEFS を共用する
 function seriesBonusDesc(bonus) {
   return EQUIP_STAT_DEFS
     .filter((s) => bonus[s.key] != null)
@@ -2487,6 +2548,8 @@ function recomputeEquipStats() {
     if (!id || !equipSave.items[id]) continue;
     const lv = equipSave.items[id].lv;
     foldEquipStats(s, (k) => itemStatAt(id, k, lv));
+    // 品質ボーナス: レア度以下の全段が乗る(強化Lvでは伸びない固定値)
+    for (const q of qualityBonuses(id)) foldEquipStats(s, (k) => q[k]);
   }
   // 系統ボーナス: 同じ系統を need 部位そろえた段が全部乗る(強化Lvでは伸びない固定値)
   const seriesCounts = countEquippedSeries();
@@ -4900,7 +4963,8 @@ function renderDbgPower() {
       const id = equipSave.equipped[slot];
       r += row(EQUIP_SLOTS[slot].label,
         id ? EQUIP_ITEMS[id].icon + ' ' + EQUIP_ITEMS[id].name + ' Lv' + equipSave.items[id].lv : '—',
-        id ? itemDesc(id, equipSave.items[id].lv) : NA);
+        id ? itemDesc(id, equipSave.items[id].lv) +
+             ' / 品質: ' + qualityBonuses(id).map(seriesBonusDesc).join('・') : NA);
     }
     // 系統ボーナス(装備中の系統だけ)。発動段の効果を並べる
     const seCounts = countEquippedSeries();
@@ -5508,6 +5572,9 @@ function renderEquipScreen() {
       '<div class="e-name"><span class="e-slot-chip">' + EQUIP_SLOTS[item.slot].label + '</span>' + seriesChip +
       item.name + '<span class="e-lv">Lv ' + st.lv + ' / ' + itemLvCap(id) + '</span></div>' +
       '<div class="e-desc">' + itemDesc(id, st.lv) + '</div>' +
+      // 品質ボーナス(レア度スキル): 段ごとにその段のレア度色で並べる
+      '<div class="e-quality">品質 ' + qualityBonuses(id).map((q) =>
+        '<span style="color:' + rarityColor(q.rarity) + '">' + seriesBonusDesc(q) + '</span>').join('・') + '</div>' +
       '<div class="e-mat">素材 ' + st.mat + ' 個</div>';
     const btns = document.createElement('div');
     btns.className = 'e-btns';
