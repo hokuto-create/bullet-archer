@@ -152,7 +152,7 @@
   /* エピック以上は枠を淡く明滅させて「引き」の強さを見せる。
      animation はショートハンドで card-in を上書きしてしまうため、
      出現アニメもここに並記する(delay も2本ぶん指定) */
-  .rarity-epic, .rarity-legendary {
+  .rarity-epic, .rarity-legendary, .rarity-sclass {
     animation: card-in 0.45s cubic-bezier(0.34, 1.56, 0.64, 1) backwards,
                rarity-glow 1.2s ease-in-out infinite;
     animation-delay: var(--in-delay, 0s), var(--in-delay, 0s);
@@ -460,8 +460,30 @@
     background: rgba(160,190,255,0.16); border-radius: 6px;
     padding: 1px 6px; margin-right: 6px; vertical-align: 1px;
   }
-  .eq-row .e-name .e-lv { font-size: 11px; color: #9fe08a; margin-left: 6px; }
+  .eq-row .e-name .e-lv { font-size: 11px; color: #9fe08a; margin-left: 6px; white-space: nowrap; }
+  /* 系統(シリーズ)装備のチップ。色は系統のレアリティ色を --sc で受ける */
+  .e-series-chip {
+    display: inline-block; font-size: 10px; font-weight: bold; color: var(--sc, #cfe0ff);
+    background: rgba(255,255,255,0.08); border: 1px solid var(--sc, rgba(160,190,255,0.4));
+    border-radius: 6px; padding: 0 6px; margin-right: 6px; vertical-align: 1px;
+  }
+  /* 系統ボーナスの一覧(スロットグリッドと所持一覧の間)。所持している系統だけ出す */
+  #equip-series {
+    flex: none; width: 100%; max-width: 480px; padding: 0 14px 8px;
+  }
+  .series-row {
+    display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap;
+    background: rgba(22,26,52,0.9); border: 1px solid var(--sc, rgba(160,190,255,0.3));
+    border-radius: 10px; padding: 5px 10px; margin-bottom: 5px;
+    font-size: 11px; color: #9ab; text-align: left;
+  }
+  .series-row .sr-name { font-size: 12px; font-weight: bold; color: var(--sc, #fff); }
+  .series-row .sr-cnt { color: #cfe0ff; }
+  .series-row .sr-bonus { white-space: nowrap; }
+  .series-row .sr-bonus.on { color: #9fe08a; font-weight: bold; }
   .eq-row .e-desc { font-size: 11px; color: #bcd; line-height: 1.5; }
+  /* 品質ボーナス(レア度スキル)の行。効果ごとにその段のレア度色が付く */
+  .eq-row .e-quality { font-size: 10px; color: #9ab; line-height: 1.5; }
   .eq-row .e-mat { font-size: 10px; color: #9ab; }
   .eq-row .e-btns { display: flex; flex-direction: column; gap: 5px; flex: none; }
   .e-btn {
@@ -495,7 +517,7 @@
     animation: card-in 0.45s cubic-bezier(0.34, 1.56, 0.64, 1) backwards;
     animation-delay: var(--in-delay, 0s);
   }
-  .g-card.rarity-epic, .g-card.rarity-legendary {
+  .g-card.rarity-epic, .g-card.rarity-legendary, .g-card.rarity-sclass {
     animation: card-in 0.45s cubic-bezier(0.34, 1.56, 0.64, 1) backwards,
                rarity-glow 1.2s ease-in-out infinite;
     animation-delay: var(--in-delay, 0s), var(--in-delay, 0s);
@@ -662,6 +684,7 @@
     <span id="equip-coins" class="coin-label"></span>
   </div>
   <div id="equip-slots"></div>
+  <div id="equip-series"></div>
   <div id="equip-list"></div>
 </div>
 
@@ -801,22 +824,26 @@ const CONFIG = {
       rare:      { weight: 3, label: 'レア',           color: '#4da3ff' },
       epic:      { weight: 2, label: 'エピック',       color: '#c76bff' },
       legendary: { weight: 1, label: 'レジェンダリー', color: '#ffb64d' },
+      // S級は装備専用の最上位段(スキルには使わない)。weight 0 なのでスキル抽選には
+      // 一切出ず、ガチャの排出率は CONFIG.equip.gacha.weights 側で別に持つ
+      sclass:    { weight: 0, label: 'S級',           color: '#ff5d6e' },
     },
   },
   // 装備システム(6部位)。ラン外のメタ進行: ガチャで入手 → 強化 → 装備してランに挑む。
   // アイテム定義は EQUIP_ITEMS(データ駆動)、所持・装備状況は localStorage に保存
   equip: {
     growthPerLv: 0.2,               // 強化1Lvごとに基礎値の20%ずつ伸びる(Lv5で基礎の1.8倍)
-    lvCap:     { common: 5, rare: 7, epic: 9, legendary: 10 },   // レアリティ別の強化上限Lv
+    lvCap:     { common: 5, rare: 7, epic: 9, legendary: 10, sclass: 12 },   // レアリティ別の強化上限Lv
     // 強化コスト: Lv n → n+1 は「その装備の素材 matPerLv 個 + コイン coinPerLv × n」。
     // 高レアほど被り(=素材)が出にくいぶん素材要求は軽くし、かわりにコインを重くする
-    matPerLv:  { common: 3, rare: 2, epic: 1, legendary: 1 },
-    coinPerLv: { common: 40, rare: 80, epic: 160, legendary: 320 },
-    dupeMat:   { common: 1, rare: 1, epic: 1, legendary: 1 },    // ガチャ被り1回で得る素材数
+    matPerLv:  { common: 3, rare: 2, epic: 1, legendary: 1, sclass: 1 },
+    coinPerLv: { common: 40, rare: 80, epic: 160, legendary: 320, sclass: 640 },
+    // ガチャ被り1回で得る素材数(S級は排出が渋いぶん被り1回の価値を上げる)
+    dupeMat:   { common: 1, rare: 1, epic: 1, legendary: 1, sclass: 2 },
     gacha: {
       cost1: 100, cost10: 900,      // 1回 / 10連(1割引)のコイン
       // ガチャのレアリティ重み(スキル抽選の 4/3/2/1 より尖らせる。色・ラベルは level.rarity を共用)
-      weights: { common: 55, rare: 30, epic: 12, legendary: 3 },
+      weights: { common: 54, rare: 30, epic: 12, legendary: 3, sclass: 1 },
     },
     rewards: { wave: 10, boss: 40 },  // 通常ウェーブ / ボスウェーブのクリアで得るコイン
   },
@@ -2250,11 +2277,96 @@ const EQUIP_SLOTS = {
   amulet: { label: 'お守り', icon: '🧿' },
 };
 
+// 装備系統(シリーズ)。6部位フルセットのテーマ装備で、同じ系統を必要数(need)
+// そろえて装備すると系統ボーナスが発動する(2/4/6部位の3段。全段が累積で乗る)。
+// ボーナスの効果キーはアイテムと同じ(atk/hp/cut/spd/rate/summon/graze)で、
+// 強化Lvでは伸びない固定値。rarity はその系統の全部位のレアリティで、
+// 通常装備3系統(狩人/銀狼/星詠)と S級装備3系統(龍帝/鳳凰/月虹)がある。
+// 系統を増やすときはここにエントリを足し、EQUIP_ITEMS に series 付きの6部位を足す。
+// 通常3系統は S級3系統の**完全下位互換**: 部位ごとの効果キーもボーナス段の効果キーも
+// 対になる S級系統と同一で、数値だけすべて下(狩人⊂龍帝 / 銀狼⊂鳳凰 / 星詠⊂月虹)。
+// 通常で組んだセットの上位を引いたらそのまま置き換えられる、という導線を作る
+const EQUIP_SERIES = {
+  // --- 通常装備3系統(S級の下位版) ---
+  hunt:  { label: '狩人', rarity: 'common', bonuses: [   // 龍帝の下位版(攻撃)
+    { need: 2, atk: 0.02 }, { need: 4, rate: 0.03 }, { need: 6, atk: 0.05 }] },
+  wolf:  { label: '銀狼', rarity: 'rare',   bonuses: [   // 鳳凰の下位版(生存)
+    { need: 2, hp: 10 }, { need: 4, cut: 0.02 }, { need: 6, hp: 15, cut: 0.02 }] },
+  seer:  { label: '星詠', rarity: 'epic',   bonuses: [   // 月虹の下位版(召喚・グレイズ)
+    { need: 2, summon: 0.06 }, { need: 4, graze: 0.15 }, { need: 6, summon: 0.1, graze: 0.15 }] },
+  // --- S級装備3系統 ---
+  ryu:   { label: '龍帝', rarity: 'sclass', bonuses: [   // 攻撃特化
+    { need: 2, atk: 0.05 }, { need: 4, rate: 0.06 }, { need: 6, atk: 0.12 }] },
+  hoo:   { label: '鳳凰', rarity: 'sclass', bonuses: [   // 生存特化
+    { need: 2, hp: 20 }, { need: 4, cut: 0.05 }, { need: 6, hp: 40, cut: 0.05 }] },
+  gekko: { label: '月虹', rarity: 'sclass', bonuses: [   // 召喚・グレイズ特化
+    { need: 2, summon: 0.08 }, { need: 4, graze: 0.3 }, { need: 6, summon: 0.15, graze: 0.3 }] },
+};
+
+// 品質ボーナス(レア度スキル)。部位ごとにレア度の段の梯子を持ち、アイテムには
+// **自分のレア度以下の段が全部**乗る(高レアほど効果行が増える。アーチャー伝説2の
+// 品質スキル方式)。同部位ならレア度が上のアイテムが必ず下位互換を包含するので、
+// 系統の「通常⊂S級」の関係もそのまま保たれる。値は強化Lvでは伸びない固定値で、
+// 効果キーはアイテム・系統ボーナスと同じ。段を増やすときはここに足す
+const EQUIP_QUALITY = {
+  weapon: [
+    { rarity: 'common',    atk: 0.02 },
+    { rarity: 'rare',      rate: 0.03 },
+    { rarity: 'epic',      atk: 0.05 },
+    { rarity: 'legendary', graze: 0.1 },
+    { rarity: 'sclass',    atk: 0.10 },
+  ],
+  helmet: [
+    { rarity: 'common',    hp: 5 },
+    { rarity: 'rare',      hp: 8 },
+    { rarity: 'epic',      cut: 0.02 },
+    { rarity: 'legendary', hp: 15 },
+    { rarity: 'sclass',    hp: 25 },
+  ],
+  armor: [
+    { rarity: 'common',    hp: 5 },
+    { rarity: 'rare',      cut: 0.02 },
+    { rarity: 'epic',      hp: 10 },
+    { rarity: 'legendary', cut: 0.04 },
+    { rarity: 'sclass',    cut: 0.06, hp: 15 },
+  ],
+  boots: [
+    { rarity: 'common',    spd: 0.02 },
+    { rarity: 'rare',      spd: 0.03 },
+    { rarity: 'epic',      hp: 8 },
+    { rarity: 'legendary', spd: 0.05 },
+    { rarity: 'sclass',    spd: 0.08 },
+  ],
+  ring: [
+    { rarity: 'common',    rate: 0.02 },
+    { rarity: 'rare',      atk: 0.02 },
+    { rarity: 'epic',      rate: 0.04 },
+    { rarity: 'legendary', rate: 0.06 },
+    { rarity: 'sclass',    rate: 0.08, atk: 0.04 },
+  ],
+  amulet: [
+    { rarity: 'common',    summon: 0.03 },
+    { rarity: 'rare',      summon: 0.04 },
+    { rarity: 'epic',      graze: 0.1 },
+    { rarity: 'legendary', summon: 0.08 },
+    { rarity: 'sclass',    summon: 0.12, graze: 0.1 },
+  ],
+};
+
+// レア度の序列(CONFIG.level.rarity の定義順 = common < rare < epic < legendary < sclass)
+function rarityIndex(r) { return Object.keys(CONFIG.level.rarity).indexOf(r); }
+// そのアイテムに乗っている品質ボーナス段(自分のレア度以下の全段)
+function qualityBonuses(id) {
+  const it = EQUIP_ITEMS[id];
+  return EQUIP_QUALITY[it.slot].filter((q) => rarityIndex(q.rarity) <= rarityIndex(it.rarity));
+}
+
 // 装備アイテム(データ駆動: 増やすときはここにオブジェクトを足す)。
 // レアリティはアイテム固定(SKILLS と同じ流儀)。数値は Lv1 の基礎値で、
 // 強化1Lvごとに基礎値の CONFIG.equip.growthPerLv 倍ずつ伸びる(itemStatAt)。
 // 効果フィールド: atk=攻撃%, hp=最大HP, cut=被ダメ軽減%, spd=移動速度%,
-// rate=攻撃速度%, summon=召喚ダメージ%, graze=強化ショット倍率加算
+// rate=攻撃速度%, summon=召喚ダメージ%, graze=強化ショット倍率加算。
+// series を持つアイテムは系統装備(EQUIP_SERIES 参照。同系統をそろえるとボーナス)
 const EQUIP_ITEMS = {
   // --- 武器(攻撃%) ---
   bow_oak:      { slot: 'weapon', icon: '🏹', name: '樫の長弓',     rarity: 'common',    atk: 0.06 },
@@ -2286,6 +2398,54 @@ const EQUIP_ITEMS = {
   charm_owl:    { slot: 'amulet', icon: '🦉', name: '梟の護符',     rarity: 'rare',      summon: 0.10 },
   charm_fox:    { slot: 'amulet', icon: '🦊', name: '妖狐のお守り', rarity: 'epic',      graze: 0.3 },
   charm_dragon: { slot: 'amulet', icon: '🐉', name: '龍神の勾玉',   rarity: 'legendary', summon: 0.15, graze: 0.3 },
+
+  // ===== 系統装備(EQUIP_SERIES 参照)。series を持つアイテムはそろえると系統ボーナス =====
+  // 基礎値は単品だと同レアリティの無系統品と同格〜わずかに下で、セットボーナスぶんで上回る設計。
+  // S級は legendary の約1.3〜1.4倍の基礎値+副ステータス持ち。
+  // 通常3系統は対になる S級系統の完全下位互換: 部位ごとの効果キーを S級側と同一にし、
+  // 数値だけすべて下げてある(EQUIP_SERIES のコメント参照)
+  // --- 通常: 狩人系統(common。龍帝の下位版 = 攻撃) ---
+  hunt_bow:     { slot: 'weapon', icon: '🏹', name: '狩人の短弓',     rarity: 'common', series: 'hunt', atk: 0.06 },
+  hunt_helm:    { slot: 'helmet', icon: '🪶', name: '狩人の羽根帽',   rarity: 'common', series: 'hunt', hp: 10, atk: 0.01 },
+  hunt_mail:    { slot: 'armor',  icon: '🦌', name: '狩人の鹿革胴着', rarity: 'common', series: 'hunt', cut: 0.03, atk: 0.01 },
+  hunt_boots:   { slot: 'boots',  icon: '🥾', name: '狩人の革脚絆',   rarity: 'common', series: 'hunt', spd: 0.05, atk: 0.01 },
+  hunt_ring:    { slot: 'ring',   icon: '🦴', name: '狩人の骨指輪',   rarity: 'common', series: 'hunt', rate: 0.05, atk: 0.01 },
+  hunt_charm:   { slot: 'amulet', icon: '🐺', name: '狩人の牙飾り',   rarity: 'common', series: 'hunt', summon: 0.06, atk: 0.01 },
+  // --- 通常: 銀狼系統(rare。鳳凰の下位版 = 生存) ---
+  wolf_bow:     { slot: 'weapon', icon: '🌨️', name: '銀狼の牙弓',     rarity: 'rare', series: 'wolf', atk: 0.10, hp: 4 },
+  wolf_helm:    { slot: 'helmet', icon: '🐾', name: '銀狼の毛皮兜',   rarity: 'rare', series: 'wolf', hp: 20 },
+  wolf_mail:    { slot: 'armor',  icon: '🧥', name: '銀狼の外套',     rarity: 'rare', series: 'wolf', cut: 0.06, hp: 8 },
+  wolf_boots:   { slot: 'boots',  icon: '💨', name: '銀狼の疾走靴',   rarity: 'rare', series: 'wolf', spd: 0.08, hp: 3 },
+  wolf_ring:    { slot: 'ring',   icon: '🌘', name: '銀狼の月牙輪',   rarity: 'rare', series: 'wolf', rate: 0.08, hp: 3 },
+  wolf_charm:   { slot: 'amulet', icon: '🎐', name: '銀狼の遠吠え笛', rarity: 'rare', series: 'wolf', summon: 0.10, hp: 4 },
+  // --- 通常: 星詠系統(epic。月虹の下位版 = 召喚・グレイズ) ---
+  seer_bow:     { slot: 'weapon', icon: '✨', name: '星詠の宝弓',     rarity: 'epic', series: 'seer', atk: 0.15, graze: 0.05 },
+  seer_helm:    { slot: 'helmet', icon: '⭐', name: '星詠の司祭冠',   rarity: 'epic', series: 'seer', hp: 32, summon: 0.03 },
+  seer_mail:    { slot: 'armor',  icon: '🔭', name: '星詠の観星衣',   rarity: 'epic', series: 'seer', cut: 0.10, summon: 0.03 },
+  seer_boots:   { slot: 'boots',  icon: '☁️', name: '星詠の雲沓',     rarity: 'epic', series: 'seer', spd: 0.12 },
+  seer_ring:    { slot: 'ring',   icon: '🪐', name: '星詠の連星環',   rarity: 'epic', series: 'seer', rate: 0.12, summon: 0.03 },
+  seer_charm:   { slot: 'amulet', icon: '🌟', name: '星詠の星屑袋',   rarity: 'epic', series: 'seer', summon: 0.14, graze: 0.1 },
+  // --- S級: 龍帝系統(攻撃特化。副ステータスも攻撃) ---
+  ryu_bow:      { slot: 'weapon', icon: '🐉', name: '龍帝の焔弓',     rarity: 'sclass', series: 'ryu', atk: 0.30 },
+  ryu_helm:     { slot: 'helmet', icon: '🐲', name: '龍帝の角冑',     rarity: 'sclass', series: 'ryu', hp: 60, atk: 0.04 },
+  ryu_mail:     { slot: 'armor',  icon: '🔥', name: '龍帝の緋鱗鎧',   rarity: 'sclass', series: 'ryu', cut: 0.16, atk: 0.04 },
+  ryu_boots:    { slot: 'boots',  icon: '🌋', name: '龍帝の焔脚',     rarity: 'sclass', series: 'ryu', spd: 0.20, atk: 0.04 },
+  ryu_ring:     { slot: 'ring',   icon: '🔱', name: '龍帝の焔環',     rarity: 'sclass', series: 'ryu', rate: 0.22, atk: 0.04 },
+  ryu_charm:    { slot: 'amulet', icon: '🎴', name: '龍帝の逆鱗',     rarity: 'sclass', series: 'ryu', summon: 0.16, atk: 0.04 },
+  // --- S級: 鳳凰系統(生存特化。副ステータスはHP) ---
+  hoo_bow:      { slot: 'weapon', icon: '🪶', name: '鳳凰の翼弓',     rarity: 'sclass', series: 'hoo', atk: 0.26, hp: 15 },
+  hoo_helm:     { slot: 'helmet', icon: '🔆', name: '鳳凰の羽冠',     rarity: 'sclass', series: 'hoo', hp: 75 },
+  hoo_mail:     { slot: 'armor',  icon: '🦚', name: '鳳凰の緋羽衣',   rarity: 'sclass', series: 'hoo', cut: 0.20, hp: 20 },
+  hoo_boots:    { slot: 'boots',  icon: '🕊️', name: '鳳凰の風切羽',   rarity: 'sclass', series: 'hoo', spd: 0.22, hp: 10 },
+  hoo_ring:     { slot: 'ring',   icon: '☀️', name: '鳳凰の陽輪',     rarity: 'sclass', series: 'hoo', rate: 0.20, hp: 10 },
+  hoo_charm:    { slot: 'amulet', icon: '🥚', name: '鳳凰の暁玉',     rarity: 'sclass', series: 'hoo', summon: 0.18, hp: 15 },
+  // --- S級: 月虹系統(召喚・グレイズ特化) ---
+  gekko_bow:    { slot: 'weapon', icon: '🌈', name: '月虹の霊弓',     rarity: 'sclass', series: 'gekko', atk: 0.26, graze: 0.1 },
+  gekko_helm:   { slot: 'helmet', icon: '🌙', name: '月虹の月冠',     rarity: 'sclass', series: 'gekko', hp: 60, summon: 0.06 },
+  gekko_mail:   { slot: 'armor',  icon: '🌌', name: '月虹の夜羽衣',   rarity: 'sclass', series: 'gekko', cut: 0.16, summon: 0.06 },
+  gekko_boots:  { slot: 'boots',  icon: '🌠', name: '月虹の星渡り',   rarity: 'sclass', series: 'gekko', spd: 0.24 },
+  gekko_ring:   { slot: 'ring',   icon: '💠', name: '月虹の指環',     rarity: 'sclass', series: 'gekko', rate: 0.22, summon: 0.06 },
+  gekko_charm:  { slot: 'amulet', icon: '🔮', name: '月虹の雫',       rarity: 'sclass', series: 'gekko', summon: 0.22, graze: 0.2 },
 };
 
 // アイテム効果の日本語説明(装備画面・ガチャ結果・火力表で共用)
@@ -2312,6 +2472,26 @@ function itemDesc(id, lv) {
     .join('・');
 }
 function itemLvCap(id) { return CONFIG.equip.lvCap[EQUIP_ITEMS[id].rarity]; }
+// 効果束({atk, hp, ...} + 余分なキーは無視)の説明文。系統ボーナス1段にも
+// 品質ボーナス1段にも使う。EQUIP_STAT_DEFS を共用する
+function seriesBonusDesc(bonus) {
+  return EQUIP_STAT_DEFS
+    .filter((s) => bonus[s.key] != null)
+    .map((s) => s.fmt(bonus[s.key]))
+    .join('・');
+}
+// 装備中の系統ごとの部位数 {seriesId: count}。集計(recomputeEquipStats)と
+// 装備画面の系統ボーナス表示の両方から使う
+function countEquippedSeries() {
+  const counts = {};
+  for (const slot in EQUIP_SLOTS) {
+    const id = equipSave.equipped[slot];
+    if (!id || !equipSave.items[id]) continue;
+    const se = EQUIP_ITEMS[id].series;
+    if (se) counts[se] = (counts[se] || 0) + 1;
+  }
+  return counts;
+}
 // Lv lv → lv+1 の強化コスト。上限なら null
 function upgradeCost(id) {
   const st = equipSave.items[id];
@@ -2351,21 +2531,34 @@ function saveEquip() {
 // --- 装備ステータス集計。装備の変更・強化・ロード時だけ再計算する ---
 // recomputeSkillStats() がこの値を焼き込むので、末尾で必ず呼び直す
 let equipStats = { atkMul: 1, rateMul: 1, spdMul: 1, summonMul: 1, grazeFlat: 0, hpBonus: 0, dmgCut: 0 };
+// 効果1件ぶん(装備1つ or 系統ボーナス1段)を集計へ畳み込む。read(key) が値(無ければ0)を返す
+function foldEquipStats(s, read) {
+  s.atkMul    *= 1 + (read('atk') || 0);
+  s.rateMul   *= 1 + (read('rate') || 0);
+  s.spdMul    *= 1 + (read('spd') || 0);
+  s.summonMul *= 1 + (read('summon') || 0);
+  s.grazeFlat += read('graze') || 0;
+  s.hpBonus   += Math.round(read('hp') || 0);
+  s.dmgCut    += read('cut') || 0;
+}
 function recomputeEquipStats() {
   const s = { atkMul: 1, rateMul: 1, spdMul: 1, summonMul: 1, grazeFlat: 0, hpBonus: 0, dmgCut: 0 };
   for (const slot in EQUIP_SLOTS) {
     const id = equipSave.equipped[slot];
     if (!id || !equipSave.items[id]) continue;
     const lv = equipSave.items[id].lv;
-    s.atkMul    *= 1 + itemStatAt(id, 'atk', lv);
-    s.rateMul   *= 1 + itemStatAt(id, 'rate', lv);
-    s.spdMul    *= 1 + itemStatAt(id, 'spd', lv);
-    s.summonMul *= 1 + itemStatAt(id, 'summon', lv);
-    s.grazeFlat += itemStatAt(id, 'graze', lv);
-    s.hpBonus   += Math.round(itemStatAt(id, 'hp', lv));
-    s.dmgCut    += itemStatAt(id, 'cut', lv);
+    foldEquipStats(s, (k) => itemStatAt(id, k, lv));
+    // 品質ボーナス: レア度以下の全段が乗る(強化Lvでは伸びない固定値)
+    for (const q of qualityBonuses(id)) foldEquipStats(s, (k) => q[k]);
   }
-  s.dmgCut = Math.min(0.6, s.dmgCut);   // 軽減の積みすぎ保険(現アイテムでは届かない)
+  // 系統ボーナス: 同じ系統を need 部位そろえた段が全部乗る(強化Lvでは伸びない固定値)
+  const seriesCounts = countEquippedSeries();
+  for (const se in seriesCounts) {
+    for (const b of EQUIP_SERIES[se].bonuses) {
+      if (seriesCounts[se] >= b.need) foldEquipStats(s, (k) => b[k]);
+    }
+  }
+  s.dmgCut = Math.min(0.6, s.dmgCut);   // 軽減の上限(S級鎧を強化しきると届くので実際に効く保険)
   equipStats = s;
   recomputeSkillStats();                // level.stats に焼き込まれた装備倍率を更新
 }
@@ -4770,7 +4963,16 @@ function renderDbgPower() {
       const id = equipSave.equipped[slot];
       r += row(EQUIP_SLOTS[slot].label,
         id ? EQUIP_ITEMS[id].icon + ' ' + EQUIP_ITEMS[id].name + ' Lv' + equipSave.items[id].lv : '—',
-        id ? itemDesc(id, equipSave.items[id].lv) : NA);
+        id ? itemDesc(id, equipSave.items[id].lv) +
+             ' / 品質: ' + qualityBonuses(id).map(seriesBonusDesc).join('・') : NA);
+    }
+    // 系統ボーナス(装備中の系統だけ)。発動段の効果を並べる
+    const seCounts = countEquippedSeries();
+    for (const se in seCounts) {
+      const seDef = EQUIP_SERIES[se];
+      const active = seDef.bonuses.filter((b) => seCounts[se] >= b.need);
+      r += row(seDef.label + '系統', seCounts[se] + '/6 部位',
+        active.length ? active.map(seriesBonusDesc).join(' / ') : '<span style="color:#5a6788">未発動</span>');
     }
     r += row('合算', '攻 ×' + fmt(equipStats.atkMul) + ' / 攻速 ×' + fmt(equipStats.rateMul) + ' / 移動 ×' + fmt(equipStats.spdMul),
       '召喚 ×' + fmt(equipStats.summonMul) + ' / HP +' + equipStats.hpBonus +
@@ -5338,9 +5540,10 @@ function renderEquipScreen() {
       '<span class="e-item">' + (id ? EQUIP_ITEMS[id].name + ' Lv' + equipSave.items[id].lv : '― なし ―') + '</span></span>';
     slotsEl.appendChild(cell);
   }
+  renderEquipSeries();
   equipListEl.innerHTML = '';
   // 所持している全装備をレアリティの高い順 → スロット順で一覧する
-  const order = ['legendary', 'epic', 'rare', 'common'];
+  const order = ['sclass', 'legendary', 'epic', 'rare', 'common'];
   const slotOrder = Object.keys(EQUIP_SLOTS);
   const owned = Object.keys(EQUIP_ITEMS)
     .filter((id) => equipSave.items[id])
@@ -5360,10 +5563,18 @@ function renderEquipScreen() {
     row.style.setProperty('--rc', rarityColor(item.rarity));
     const info = document.createElement('div');
     info.className = 'e-info';
+    // 系統装備には系統チップを付ける(色は系統のレアリティ色)
+    const seriesChip = item.series
+      ? '<span class="e-series-chip" style="--sc:' + rarityColor(EQUIP_SERIES[item.series].rarity) + '">' +
+        EQUIP_SERIES[item.series].label + '</span>'
+      : '';
     info.innerHTML =
-      '<div class="e-name"><span class="e-slot-chip">' + EQUIP_SLOTS[item.slot].label + '</span>' +
+      '<div class="e-name"><span class="e-slot-chip">' + EQUIP_SLOTS[item.slot].label + '</span>' + seriesChip +
       item.name + '<span class="e-lv">Lv ' + st.lv + ' / ' + itemLvCap(id) + '</span></div>' +
       '<div class="e-desc">' + itemDesc(id, st.lv) + '</div>' +
+      // 品質ボーナス(レア度スキル): 段ごとにその段のレア度色で並べる
+      '<div class="e-quality">品質 ' + qualityBonuses(id).map((q) =>
+        '<span style="color:' + rarityColor(q.rarity) + '">' + seriesBonusDesc(q) + '</span>').join('・') + '</div>' +
       '<div class="e-mat">素材 ' + st.mat + ' 個</div>';
     const btns = document.createElement('div');
     btns.className = 'e-btns';
@@ -5389,6 +5600,31 @@ function renderEquipScreen() {
     row.appendChild(info);
     row.appendChild(btns);
     equipListEl.appendChild(row);
+  }
+}
+
+// 系統ボーナスの一覧。1部位でも所持している系統だけ出す(未知の系統でリストを
+// 埋めない)。発動中の段は緑・太字、未発動は灰色で「そろえる動機」を見せる
+function renderEquipSeries() {
+  const el = document.getElementById('equip-series');
+  el.innerHTML = '';
+  const counts = countEquippedSeries();
+  for (const se in EQUIP_SERIES) {
+    const def = EQUIP_SERIES[se];
+    const ownedPieces = Object.keys(EQUIP_ITEMS)
+      .filter((id) => EQUIP_ITEMS[id].series === se && equipSave.items[id]).length;
+    if (!ownedPieces) continue;
+    const n = counts[se] || 0;
+    const row = document.createElement('div');
+    row.className = 'series-row';
+    row.style.setProperty('--sc', rarityColor(def.rarity));
+    row.innerHTML =
+      '<span class="sr-name">' + def.label + '系統</span>' +
+      '<span class="sr-cnt">装備中 ' + n + '/6</span>' +
+      def.bonuses.map((b) =>
+        '<span class="sr-bonus' + (n >= b.need ? ' on' : '') + '">' +
+        b.need + ':' + seriesBonusDesc(b) + (n >= b.need ? ' ✓' : '') + '</span>').join(' ');
+    el.appendChild(row);
   }
 }
 
@@ -5422,7 +5658,8 @@ function doGacha(count, cost) {
     card.style.setProperty('--in-delay', (i * 0.12) + 's');
     card.innerHTML =
       '<span class="g-icon">' + item.icon + '</span>' +
-      '<span class="g-rarity">' + CONFIG.level.rarity[item.rarity].label + '</span>' +
+      '<span class="g-rarity">' + CONFIG.level.rarity[item.rarity].label +
+      (item.series ? '・' + EQUIP_SERIES[item.series].label + '系統' : '') + '</span>' +
       '<span class="g-name">' + item.name + '</span>' +
       (res.dupe ? '<span class="g-dupe">→ 素材 +' + CONFIG.equip.dupeMat[item.rarity] + '</span>'
                 : '<span class="g-dupe">NEW!</span>');
