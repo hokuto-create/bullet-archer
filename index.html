@@ -540,6 +540,12 @@
     background: #2a3550; color: #cfe0ff; border: 1px solid #4a5a80; border-radius: 6px;
     cursor: pointer; pointer-events: auto;
   }
+  /* 装備画面ヘッダーの開発ボタン(装備系の開発機能は装備画面で使うのでここに置く) */
+  #dbg-equip-btn {
+    font-family: inherit; font-size: 12px; color: #9ab;
+    background: rgba(255,255,255,0.06); border: 1px dashed rgba(160,190,255,0.5);
+    border-radius: 999px; padding: 5px 12px; cursor: pointer; margin-right: 10px;
+  }
   #dbg-panel {
     position: fixed; inset: 0; display: none; align-items: center; justify-content: center;
     background: rgba(8, 10, 18, .75); z-index: 60;
@@ -681,6 +687,8 @@
 <div id="equip-screen" class="screen">
   <div class="meta-head">
     <span class="m-title">⚔️ 装備</span>
+    <!-- [DEBUG] 開発パネルを装備タブで開くボタン(使用感テスト用。リリース時に削除) -->
+    <button id="dbg-equip-btn">🛠 開発</button>
     <span id="equip-coins" class="coin-label"></span>
   </div>
   <div id="equip-slots"></div>
@@ -4934,13 +4942,16 @@ function renderDbgEquip() {
   }));
   el.appendChild(cat);
 }
-document.querySelectorAll('.dbg-tab-btn').forEach((btn) => {
-  btn.addEventListener('click', () => {
-    dbgActiveTab = btn.dataset.tab;
-    document.querySelectorAll('.dbg-tab-btn').forEach((b) => b.classList.toggle('active', b === btn));
-    for (const k in dbgTabEls) dbgTabEls[k].style.display = k === dbgActiveTab ? '' : 'none';
-    renderDbgActiveTab();
-  });
+// タブの切り替え。装備画面の開発ボタンからも呼ぶので関数に出してある
+// (data-tab 付きだけがタブバーのボタン。renderDbgEquip の付与ボタンも同クラスを使うため)
+function switchDbgTab(key) {
+  dbgActiveTab = key;
+  document.querySelectorAll('.dbg-tab-btn[data-tab]').forEach((b) => b.classList.toggle('active', b.dataset.tab === key));
+  for (const k in dbgTabEls) dbgTabEls[k].style.display = k === key ? '' : 'none';
+  renderDbgActiveTab();
+}
+document.querySelectorAll('.dbg-tab-btn[data-tab]').forEach((btn) => {
+  btn.addEventListener('click', () => switchDbgTab(btn.dataset.tab));
 });
 
 // --- スキル一覧タブ: 全スキルをレアリティ別に説明つきで並べる ---
@@ -5227,6 +5238,12 @@ function renderDbgPower() {
 }
 
 document.getElementById('dbg-skill-btn').addEventListener('click', openDbgPanel);
+// 装備画面の開発ボタン: 装備タブを表示した状態でパネルを開く
+// (装備の付与・カタログはタイトルの装備画面で使う機能なので、入口をここに置く)
+document.getElementById('dbg-equip-btn').addEventListener('click', () => {
+  switchDbgTab('equip');
+  openDbgPanel();
+});
 document.getElementById('dbg-close').addEventListener('click', closeDbgPanel);
 // 説明の表示: PC はホバー、タッチは長押し(長押しした場合は直後のクリックで取得しない)
 const dbgDesc = document.getElementById('dbg-desc');
