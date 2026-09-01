@@ -4893,6 +4893,46 @@ function renderDbgEquip() {
     saveEquip();
     recomputeEquipStats();
   });
+
+  // 全装備カタログ(未所持も含む全 EQUIP_ITEMS)。レアリティの高い順 → スロット順。
+  // 行のボタンで1個だけ付与できる(所持済みは素材+5)。ゲーム内の装備画面は
+  // 所持品しか出さないので、追加したアイテムの定義確認はここで行う
+  const R = CONFIG.level.rarity;
+  const slotOrder = Object.keys(EQUIP_SLOTS);
+  const cat = document.createElement('div');
+  let html = '';
+  for (const tier of Object.keys(R).slice().reverse()) {
+    const ids = Object.keys(EQUIP_ITEMS)
+      .filter((id) => EQUIP_ITEMS[id].rarity === tier)
+      .sort((a, b) => slotOrder.indexOf(EQUIP_ITEMS[a].slot) - slotOrder.indexOf(EQUIP_ITEMS[b].slot));
+    if (!ids.length) continue;
+    html += '<div class="dbg-sec" style="color:' + R[tier].color + '">' +
+      R[tier].label + '(' + ids.length + '種)</div><table class="dbg-table">';
+    for (const id of ids) {
+      const it = EQUIP_ITEMS[id];
+      const st = equipSave.items[id];
+      // 効果値は所持していれば現在Lv、未所持は Lv1 の基礎値で表示
+      html += '<tr><td class="t-k">' + it.icon + ' ' + it.name + '</td>' +
+        '<td class="t-sm">' + EQUIP_SLOTS[it.slot].label + '</td>' +
+        '<td class="t-sm">' + (it.series ? EQUIP_SERIES[it.series].label : '—') + '</td>' +
+        '<td class="t-sm">' + (st
+          ? (equipSave.equipped[it.slot] === id ? '装備中 ' : '') + 'Lv' + st.lv + '/' + itemLvCap(id)
+          : '<span style="color:#5a6788">未所持</span>') + '</td>' +
+        '<td class="t-desc">' + itemDesc(id, st ? st.lv : 1) +
+        ' / 品質: ' + qualityBonuses(id).map(seriesBonusDesc).join('・') + '</td>' +
+        '<td><button class="dbg-minus" data-give="' + id + '">' + (st ? '素材+5' : '付与') + '</button></td></tr>';
+    }
+    html += '</table>';
+  }
+  cat.innerHTML = html;
+  cat.querySelectorAll('[data-give]').forEach((b) => b.addEventListener('click', () => {
+    const id = b.dataset.give;
+    if (!equipSave.items[id]) equipSave.items[id] = { lv: 1, mat: 0 };
+    else equipSave.items[id].mat += 5;
+    saveEquip();
+    renderDbgEquip();
+  }));
+  el.appendChild(cat);
 }
 document.querySelectorAll('.dbg-tab-btn').forEach((btn) => {
   btn.addEventListener('click', () => {
