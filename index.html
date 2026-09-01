@@ -440,27 +440,52 @@
   .eq-slot .e-body { min-width: 0; }
   .eq-slot .e-slotname { font-size: 10px; color: #9ab; letter-spacing: 0.1em; }
   .eq-slot .e-item { font-size: 13px; font-weight: bold; color: var(--rc, #8899aa); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  /* 選択スロットの所持品リスト。縦スクロール */
+  /* 所持装備の一覧: アーチャー伝説風のアイコンタイルのグリッド。タップで詳細ポップアップ */
   #equip-list {
     flex: 1; width: 100%; max-width: 480px; min-height: 0;
     overflow-y: auto; -webkit-overflow-scrolling: touch;
     padding: 0 14px calc(env(safe-area-inset-bottom) + 78px);
+    display: grid; grid-template-columns: repeat(4, 1fr); gap: 9px;
+    align-content: start;
   }
-  .eq-row {
-    display: flex; align-items: center; gap: 10px; text-align: left;
-    background: rgba(22,26,52,0.9); border: 2px solid var(--rc, rgba(160,190,255,0.3));
-    border-radius: 12px; padding: 9px 10px; margin-bottom: 8px; color: #fff;
+  #equip-list .eq-empty { grid-column: 1 / -1; }
+  .eq-tile {
+    position: relative; aspect-ratio: 1; min-width: 0;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 34px; cursor: pointer; color: #fff;
+    border: 2px solid var(--rc, rgba(160,190,255,0.4)); border-radius: 14px;
+    background: #161a34;   /* レアリティ色のグラデは JS がインラインで重ねる */
   }
-  .eq-row .e-icon { font-size: 26px; flex: none; }
-  .eq-row .e-info { flex: 1; min-width: 0; }
-  .eq-row .e-name { font-size: 14px; font-weight: bold; color: var(--rc, #fff); }
-  /* 一覧は全部位が混ざるので、行ごとに部位のチップを付ける */
-  .eq-row .e-slot-chip {
+  .eq-tile:active { transform: scale(0.94); }
+  .eq-tile .t-slot {
+    position: absolute; left: 5px; top: 4px;
+    font-size: 9px; color: rgba(255,255,255,0.8); letter-spacing: 0.06em;
+  }
+  .eq-tile .t-lv {
+    position: absolute; right: 5px; bottom: 3px;
+    font-size: 10px; font-weight: bold; color: #fff;
+    text-shadow: 0 1px 2px rgba(0,0,0,0.8);
+  }
+  /* S級の金バッジ(斜体の S)。アーチャー伝説のS級表示のオマージュ */
+  .eq-tile .t-s {
+    position: absolute; left: 4px; bottom: 0;
+    font-size: 20px; font-weight: 900; font-style: italic; color: #ffd94d;
+    text-shadow: 0 0 6px rgba(255,150,40,0.9), 0 1px 2px rgba(0,0,0,0.8);
+    pointer-events: none;
+  }
+  .eq-tile .t-eq {
+    position: absolute; right: -4px; top: -6px;
+    font-size: 9px; font-weight: bold; color: #10142a;
+    background: linear-gradient(180deg, #9fe08a, #5cb85c);
+    border-radius: 999px; padding: 2px 6px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.5);
+  }
+  /* 部位チップ(詳細ポップアップで使用) */
+  .e-slot-chip {
     display: inline-block; font-size: 10px; font-weight: bold; color: #cfe0ff;
     background: rgba(160,190,255,0.16); border-radius: 6px;
     padding: 1px 6px; margin-right: 6px; vertical-align: 1px;
   }
-  .eq-row .e-name .e-lv { font-size: 11px; color: #9fe08a; margin-left: 6px; white-space: nowrap; }
   /* 系統(シリーズ)装備のチップ。色は系統のレアリティ色を --sc で受ける */
   .e-series-chip {
     display: inline-block; font-size: 10px; font-weight: bold; color: var(--sc, #cfe0ff);
@@ -481,11 +506,40 @@
   .series-row .sr-cnt { color: #cfe0ff; }
   .series-row .sr-bonus { white-space: nowrap; }
   .series-row .sr-bonus.on { color: #9fe08a; font-weight: bold; }
-  .eq-row .e-desc { font-size: 11px; color: #bcd; line-height: 1.5; }
-  /* 品質ボーナス(レア度スキル)の行。効果ごとにその段のレア度色が付く */
-  .eq-row .e-quality { font-size: 10px; color: #9ab; line-height: 1.5; }
-  .eq-row .e-mat { font-size: 10px; color: #9ab; }
-  .eq-row .e-btns { display: flex; flex-direction: column; gap: 5px; flex: none; }
+  /* 装備詳細ポップアップ(アーチャー伝説の装備詳細風)。タイルのタップで開く */
+  #equip-detail {
+    position: fixed; inset: 0; z-index: 55; display: none;
+    align-items: center; justify-content: center;
+    background: rgba(8,10,18,0.75); padding: 16px;
+  }
+  #ed-card {
+    width: min(92vw, 380px); max-height: 82vh; overflow-y: auto; -webkit-overflow-scrolling: touch;
+    background: linear-gradient(180deg, #232a4e, #151a36);
+    border: 2px solid var(--rc, #4a5a80); border-radius: 16px;
+    padding: 14px; color: #fff; text-align: left; position: relative;
+    animation: card-in 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+  }
+  #ed-card .ed-close {
+    position: absolute; top: 8px; right: 8px; width: 30px; height: 30px;
+    border: none; border-radius: 50%; cursor: pointer;
+    background: rgba(255,255,255,0.12); color: #cfe0ff; font-size: 14px; font-weight: bold;
+  }
+  #ed-card .ed-name { font-size: 18px; font-weight: 900; color: var(--rc); margin-bottom: 3px; padding-right: 34px; }
+  #ed-card .ed-sub { margin-bottom: 10px; }
+  #ed-card .ed-rarity { font-size: 11px; font-weight: bold; letter-spacing: 0.1em; }
+  #ed-card .ed-top { display: flex; gap: 12px; align-items: center; margin-bottom: 8px; }
+  #ed-card .ed-tile { flex: none; width: 84px; height: 84px; font-size: 44px; cursor: default; }
+  #ed-card .ed-info { flex: 1; min-width: 0; font-size: 12px; color: #bcd; line-height: 1.7; }
+  #ed-card .ed-main { font-size: 14px; font-weight: bold; color: #fff; }
+  #ed-card .ed-sec {
+    font-size: 12px; font-weight: bold; color: #ffd76a; letter-spacing: 0.08em;
+    border-bottom: 1px solid rgba(255,215,106,0.3); padding-bottom: 3px; margin: 10px 0 5px;
+  }
+  #ed-card .ed-line { font-size: 12px; color: #dde6f8; line-height: 1.9; }
+  #ed-card .ed-line .dot { margin-right: 6px; font-weight: bold; }
+  #ed-card .ed-line.off { color: #66739a; }
+  #ed-card .ed-btns { display: flex; gap: 8px; margin-top: 12px; }
+  #ed-card .ed-btns .e-btn { flex: 1; font-size: 13px; padding: 10px 6px; }
   .e-btn {
     font-family: inherit; font-size: 11px; font-weight: bold; color: #10142a;
     background: linear-gradient(180deg, #ffd76a, #f0a830);
@@ -695,6 +749,8 @@
   <div id="equip-series"></div>
   <div id="equip-list"></div>
 </div>
+<!-- 装備詳細ポップアップ(中身は openEquipDetail() が生成) -->
+<div id="equip-detail"><div id="ed-card"></div></div>
 
 <div id="shop-screen" class="screen">
   <div class="meta-head">
@@ -5615,49 +5671,91 @@ function renderEquipScreen() {
     const item = EQUIP_ITEMS[id];
     const st = equipSave.items[id];
     const equipped = equipSave.equipped[item.slot] === id;
-    const row = document.createElement('div');
-    row.className = 'eq-row';
-    row.style.setProperty('--rc', rarityColor(item.rarity));
-    const info = document.createElement('div');
-    info.className = 'e-info';
-    // 系統装備には系統チップを付ける(色は系統のレアリティ色)
-    const seriesChip = item.series
-      ? '<span class="e-series-chip" style="--sc:' + rarityColor(EQUIP_SERIES[item.series].rarity) + '">' +
-        EQUIP_SERIES[item.series].label + '</span>'
-      : '';
-    info.innerHTML =
-      '<div class="e-name"><span class="e-slot-chip">' + EQUIP_SLOTS[item.slot].label + '</span>' + seriesChip +
-      item.name + '<span class="e-lv">Lv ' + st.lv + ' / ' + itemLvCap(id) + '</span></div>' +
-      '<div class="e-desc">' + itemDesc(id, st.lv) + '</div>' +
-      // 品質ボーナス(レア度スキル): 段ごとにその段のレア度色で並べる
-      '<div class="e-quality">品質 ' + qualityBonuses(id).map((q) =>
-        '<span style="color:' + rarityColor(q.rarity) + '">' + seriesBonusDesc(q) + '</span>').join('・') + '</div>' +
-      '<div class="e-mat">素材 ' + st.mat + ' 個</div>';
-    const btns = document.createElement('div');
-    btns.className = 'e-btns';
-    const eqBtn = document.createElement('button');
-    eqBtn.className = 'e-btn' + (equipped ? ' on' : '');
-    eqBtn.textContent = equipped ? '装備中' : '装備する';
-    eqBtn.disabled = equipped;
-    eqBtn.addEventListener('click', () => { equipItem(id); renderEquipScreen(); });
-    const upBtn = document.createElement('button');
-    upBtn.className = 'e-btn';
-    const cost = upgradeCost(id);
-    if (!cost) {
-      upBtn.textContent = '強化 MAX';
-      upBtn.disabled = true;
-    } else {
-      upBtn.textContent = '強化 (素材' + cost.mat + ' + 💰' + cost.coin + ')';
-      upBtn.disabled = st.mat < cost.mat || equipSave.coins < cost.coin;
-      upBtn.addEventListener('click', () => { upgradeItem(id); renderEquipScreen(); });
-    }
-    btns.appendChild(eqBtn);
-    btns.appendChild(upBtn);
-    row.innerHTML = '<span class="e-icon">' + item.icon + '</span>';
-    row.appendChild(info);
-    row.appendChild(btns);
-    equipListEl.appendChild(row);
+    const tile = document.createElement('div');
+    tile.className = 'eq-tile';
+    tileRarityStyle(tile, item.rarity);
+    tile.innerHTML = item.icon +
+      '<span class="t-slot">' + EQUIP_SLOTS[item.slot].label + '</span>' +
+      (item.rarity === 'sclass' ? '<span class="t-s">S</span>' : '') +
+      '<span class="t-lv">Lv' + st.lv + '</span>' +
+      (equipped ? '<span class="t-eq">装備中</span>' : '');
+    tile.addEventListener('click', () => openEquipDetail(id));
+    equipListEl.appendChild(tile);
   }
+}
+
+// タイルの枠と背景をレアリティ色で染める(#rrggbb に英数2桁のαを後置して
+// グラデーションを作る。CSS 変数だけでは α 付きの派生色を作れないためここで)
+function tileRarityStyle(el, rarity) {
+  const c = rarityColor(rarity);
+  el.style.setProperty('--rc', c);
+  el.style.background = 'linear-gradient(180deg, ' + c + '59, ' + c + '1f), #161a34';
+}
+
+// --- 装備詳細ポップアップ(アーチャー伝説の装備詳細風) ---
+// タイルのタップで開き、大きいアイコン・メイン効果・品質スキル(段ごとの
+// レア度色の◆)・系統ボーナス(発動段は緑)・装備/強化ボタンを縦に並べる
+const equipDetailEl = document.getElementById('equip-detail');
+const edCard = document.getElementById('ed-card');
+function closeEquipDetail() { equipDetailEl.style.display = 'none'; }
+equipDetailEl.addEventListener('click', (e) => { if (e.target === equipDetailEl) closeEquipDetail(); });
+function openEquipDetail(id) {
+  const item = EQUIP_ITEMS[id];
+  const st = equipSave.items[id];
+  if (!st) return;
+  const c = rarityColor(item.rarity);
+  const equipped = equipSave.equipped[item.slot] === id;
+  edCard.style.setProperty('--rc', c);
+  const seriesChip = item.series
+    ? '<span class="e-series-chip" style="--sc:' + rarityColor(EQUIP_SERIES[item.series].rarity) + '">' +
+      EQUIP_SERIES[item.series].label + '系統</span>'
+    : '';
+  // 品質スキル: 段ごとにその段のレア度色の◆を頭に付けて縦に並べる
+  const quality = qualityBonuses(id).map((q) =>
+    '<div class="ed-line"><span class="dot" style="color:' + rarityColor(q.rarity) + '">◆</span>' +
+    seriesBonusDesc(q) + '</div>').join('');
+  // 系統ボーナス: 発動段はチェック付き、未発動は灰色
+  let series = '';
+  if (item.series) {
+    const n = countEquippedSeries()[item.series] || 0;
+    series = '<div class="ed-sec">系統ボーナス(' + EQUIP_SERIES[item.series].label + ' ' + n + '/6)</div>' +
+      EQUIP_SERIES[item.series].bonuses.map((b) =>
+        '<div class="ed-line' + (n >= b.need ? '' : ' off') + '"><span class="dot">' + b.need + '部位</span>' +
+        seriesBonusDesc(b) + (n >= b.need ? ' ✓' : '') + '</div>').join('');
+  }
+  edCard.innerHTML =
+    '<button class="ed-close">✕</button>' +
+    '<div class="ed-name">' + item.name + '</div>' +
+    '<div class="ed-sub"><span class="e-slot-chip">' + EQUIP_SLOTS[item.slot].label + '</span>' + seriesChip +
+      '<span class="ed-rarity" style="color:' + c + '">' + CONFIG.level.rarity[item.rarity].label + '</span></div>' +
+    '<div class="ed-top"><div class="eq-tile ed-tile">' + item.icon +
+      (item.rarity === 'sclass' ? '<span class="t-s">S</span>' : '') + '</div>' +
+      '<div class="ed-info"><span class="ed-main">' + itemDesc(id, st.lv) + '</span><br>' +
+      'Lv ' + st.lv + ' / ' + itemLvCap(id) + '<br>強化素材 ' + st.mat + ' 個</div></div>' +
+    '<div class="ed-sec">品質スキル</div>' + quality + series +
+    '<div class="ed-btns"></div>';
+  tileRarityStyle(edCard.querySelector('.ed-tile'), item.rarity);
+  edCard.querySelector('.ed-close').addEventListener('click', closeEquipDetail);
+  const btns = edCard.querySelector('.ed-btns');
+  const eqBtn = document.createElement('button');
+  eqBtn.className = 'e-btn' + (equipped ? ' on' : '');
+  eqBtn.textContent = equipped ? '装備中' : '装備する';
+  eqBtn.disabled = equipped;
+  eqBtn.addEventListener('click', () => { equipItem(id); renderEquipScreen(); openEquipDetail(id); });
+  const upBtn = document.createElement('button');
+  upBtn.className = 'e-btn';
+  const cost = upgradeCost(id);
+  if (!cost) {
+    upBtn.textContent = '強化 MAX';
+    upBtn.disabled = true;
+  } else {
+    upBtn.textContent = '強化 (素材' + cost.mat + ' + 💰' + cost.coin + ')';
+    upBtn.disabled = st.mat < cost.mat || equipSave.coins < cost.coin;
+    upBtn.addEventListener('click', () => { upgradeItem(id); renderEquipScreen(); openEquipDetail(id); });
+  }
+  btns.appendChild(eqBtn);
+  btns.appendChild(upBtn);
+  equipDetailEl.style.display = 'flex';
 }
 
 // 系統ボーナスの一覧。1部位でも所持している系統だけ出す(未知の系統でリストを
@@ -5763,6 +5861,7 @@ function showTabToast(text) {
 function switchTitleTab(id) {
   const tab = TITLE_TABS.find((t) => t.id === id);
   if (tab.locked) { showTabToast('近日公開!'); return; }
+  closeEquipDetail();                // 装備詳細ポップアップは画面をまたいで残さない
   activeTitleTab = id;
   // タイトル系 screen をタブの screen だけ表示に切り替える
   for (const t of TITLE_TABS) {
