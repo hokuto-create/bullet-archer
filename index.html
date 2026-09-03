@@ -2465,21 +2465,51 @@ const EQUIP_SLOTS = {
 //   月虹 = 遠距離: 飛距離威力・遠距離攻速・弾軽減・停止直後の初弾強化・遠距離ヒットで矢+1・判定半径
 //   陽炎 = グレイズ: 強化ショット貫通・構え中の判定半径・チャージ防御・グレイズ加速・斜め矢・上限+
 // 系統ボーナスはそのスタイルを深める段で、6部位で完成効果(燃焼爆発 / 遠距離貫通 / 衝撃波)が出る
+// 部位固有効果は**レア度の段の梯子**(fx)で持つ: 部位ごとに1つの効果キーと、コモン→S級の
+// 5段の加算値(EQUIP_FX_TIERS の順)。アイテムには自分のレア度以下の段が全部乗る(品質スキルと
+// 同じ方式。qualityBonuses が展開する)ので、同じ系統でもレア度が上がるほど効果行が増えて強くなる。
+// 通常系統は fxOf で対になるS級系統の梯子をそのまま使い、自分のレア度の段で止まる
+// = 「通常⊂S級」が構造として保証される(値は S級側にだけ書く)
+const EQUIP_FX_TIERS = ['common', 'rare', 'epic', 'legendary', 'sclass'];
 const EQUIP_SERIES = {
-  // --- 通常装備3系統(S級の下位版) ---
-  hunt:   { label: '狩人', rarity: 'common', bonuses: [   // 龍帝の下位版
+  // --- 通常装備3系統(S級の下位版。fx は fxOf の系統から借りる) ---
+  hunt:   { label: '狩人', rarity: 'common', fxOf: 'ryu',    bonuses: [
     { need: 2, explodeRadius: 0.15 }, { need: 4, thorns: 0.25 }, { need: 6, explodeBurn: 0.5 }] },
-  seer:   { label: '星詠', rarity: 'epic',   bonuses: [   // 月虹の下位版
+  seer:   { label: '星詠', rarity: 'epic',   fxOf: 'gekko',  bonuses: [
     { need: 2, farPow: 0.1 }, { need: 4, farRate: 0.08 }, { need: 6, farPierce: 1 }] },
-  wolf:   { label: '銀狼', rarity: 'rare',   bonuses: [   // 陽炎の下位版
+  wolf:   { label: '銀狼', rarity: 'rare',   fxOf: 'kagero', bonuses: [
     { need: 2, graze: 0.15 }, { need: 4, chargeGuard: 0.1 }, { need: 6, grazeWave: 0.5 }] },
   // --- S級装備3系統 ---
   ryu:    { label: '龍帝', rarity: 'sclass', bonuses: [   // 近距離
-    { need: 2, explodeRadius: 0.3 }, { need: 4, thorns: 0.5 }, { need: 6, explodeBurn: 1.0 }] },
+    { need: 2, explodeRadius: 0.3 }, { need: 4, thorns: 0.5 }, { need: 6, explodeBurn: 1.0 }],
+    fx: {                              //          コモン  レア  エピ  レジェ  S級   (累計)
+      weapon: { key: 'explode',    tiers: [0.20, 0.05, 0.10, 0.05, 0.10] },   // 爆発率 .20/.25/.35/.40/.50
+      helmet: { key: 'nearAtk',    tiers: [0.08, 0.04, 0.05, 0.03, 0.05] },   // 至近攻撃 .08/.12/.17/.20/.25
+      armor:  { key: 'thorns',     tiers: [0.40, 0.15, 0.20, 0.10, 0.15] },   // 反射 .40/.55/.75/.85/1.0
+      boots:  { key: 'moveCut',    tiers: [0.15, 0.05, 0.08, 0.05, 0.07] },   // 移動中軽減 .15/.20/.28/.33/.40
+      ring:   { key: 'nearRapid',  tiers: [0.15, 0.05, 0.08, 0.05, 0.07] },   // 至近連射 .15/.20/.28/.33/.40
+      amulet: { key: 'grazeBlast', tiers: [0.30, 0.10, 0.15, 0.10, 0.15] },   // グレイズ爆発 .30/.40/.55/.65/.80
+    } },
   gekko:  { label: '月虹', rarity: 'sclass', bonuses: [   // 遠距離
-    { need: 2, farPow: 0.2 }, { need: 4, farRate: 0.15 }, { need: 6, farPierce: 2 }] },
+    { need: 2, farPow: 0.2 }, { need: 4, farRate: 0.15 }, { need: 6, farPierce: 2 }],
+    fx: {
+      weapon: { key: 'farPow',     tiers: [0.15, 0.05, 0.10, 0.08, 0.12] },   // 飛距離威力 .15/.20/.30/.38/.50
+      helmet: { key: 'farRate',    tiers: [0.10, 0.03, 0.05, 0.05, 0.07] },   // 遠距離攻速 .10/.13/.18/.23/.30
+      armor:  { key: 'bulletCut',  tiers: [0.06, 0.02, 0.04, 0.03, 0.05] },   // 弾軽減 .06/.08/.12/.15/.20
+      boots:  { key: 'stopShot',   tiers: [0.15, 0.05, 0.10, 0.08, 0.12] },   // 初弾 .15/.20/.30/.38/.50
+      ring:   { key: 'farMulti',   tiers: [0.30, 0.10, 0.20, 0.15, 0.25] },   // 追加矢率 .30/.40/.60/.75/1.0
+      amulet: { key: 'grazeRange', tiers: [0.10, 0.03, 0.05, 0.05, 0.07] },   // 判定半径 .10/.13/.18/.23/.30
+    } },
   kagero: { label: '陽炎', rarity: 'sclass', bonuses: [   // グレイズ
-    { need: 2, graze: 0.3 }, { need: 4, chargeGuard: 0.25 }, { need: 6, grazeWave: 1.0 }] },
+    { need: 2, graze: 0.3 }, { need: 4, chargeGuard: 0.25 }, { need: 6, grazeWave: 1.0 }],
+    fx: {
+      weapon: { key: 'chargeShot',  tiers: [1, 0, 0, 0, 1] },                 // 強化ショット貫通 1 → S級で 2
+      helmet: { key: 'stopGraze',   tiers: [0.15, 0.05, 0.08, 0.05, 0.07] },  // 構え中の判定半径 .15/.20/.28/.33/.40
+      armor:  { key: 'chargeGuard', tiers: [0.20, 0.05, 0.10, 0.05, 0.10] },  // チャージ防御 .20/.25/.35/.40/.50
+      boots:  { key: 'grazeDash',   tiers: [0.15, 0.05, 0.08, 0.05, 0.07] },  // 加速 .15/.20/.28/.33/.40
+      ring:   { key: 'grazeDiag',   tiers: [1, 0, 0, 0, 1] },                 // 斜め矢 1本 → S級で 2本
+      amulet: { key: 'chargeCap',   tiers: [1, 0, 0, 0, 1] },                 // 上限 +1 → S級で +2
+    } },
 };
 
 // 品質ボーナス(レア度スキル)。部位ごとにレア度の段の梯子を持ち、アイテムには
@@ -2537,7 +2567,27 @@ function rarityIndex(r) { return Object.keys(CONFIG.level.rarity).indexOf(r); }
 // そのアイテムに乗っている品質ボーナス段(自分のレア度以下の全段)
 function qualityBonuses(id) {
   const it = EQUIP_ITEMS[id];
-  return EQUIP_QUALITY[it.slot].filter((q) => rarityIndex(q.rarity) <= rarityIndex(it.rarity));
+  const ri = rarityIndex(it.rarity);
+  const list = EQUIP_QUALITY[it.slot].filter((q) => rarityIndex(q.rarity) <= ri);
+  // 系統アイテムは部位固有効果の梯子(EQUIP_SERIES[].fx。通常系統は fxOf の系統の梯子)も
+  // 自分のレア度以下の段まで持つ。0 の段は行にしない
+  if (it.series) {
+    const se = EQUIP_SERIES[it.series];
+    const fx = (se.fx || EQUIP_SERIES[se.fxOf].fx)[it.slot];
+    if (fx) {
+      EQUIP_FX_TIERS.forEach((r, i) => {
+        if (rarityIndex(r) <= ri && fx.tiers[i] > 0) list.push({ rarity: r, [fx.key]: fx.tiers[i] });
+      });
+    }
+  }
+  // 表示用にレア度順(同じ段なら基礎ステータス → 固有効果)
+  return list.sort((a, b) => rarityIndex(a.rarity) - rarityIndex(b.rarity) || (EQUIP_FX_KEYS.some((k) => a[k] != null) ? 1 : -1) - (EQUIP_FX_KEYS.some((k) => b[k] != null) ? 1 : -1));
+}
+// アイテムの部位固有効果の合計(梯子の自分のレア度以下の段の和。カタログ・火力表の表示用)
+function itemFxTotal(id) {
+  const total = {};
+  for (const q of qualityBonuses(id)) for (const k of EQUIP_FX_KEYS) if (q[k] != null) total[k] = (total[k] || 0) + q[k];
+  return total;
 }
 
 // 装備アイテム(データ駆動: 増やすときはここにオブジェクトを足す)。
@@ -2583,50 +2633,50 @@ const EQUIP_ITEMS = {
   // S級は legendary の約1.3〜1.4倍の基礎値+副ステータス持ち。
   // 通常3系統は対になる S級系統の完全下位互換: 部位ごとの効果キーを S級側と同一にし、
   // 数値だけすべて下げてある(EQUIP_SERIES のコメント参照)
-  // 系統アイテムは基礎ステータスに加えて**部位固有効果**(EQUIP_FX_KEYS のキー)を1つ持つ。
-  // 固有効果は強化Lvでは伸びない固定値(itemStatAt)。通常系統は対になるS級と同じキーで数値が下
+  // 系統アイテムの部位固有効果は EQUIP_SERIES[].fx の梯子で持つ(qualityBonuses が展開)。
+  // ここには基礎ステータスだけ書く。通常系統は対になるS級系統の梯子を途中まで持つ
   // --- 通常: 狩人系統(common。龍帝の下位版 = 近距離) ---
-  hunt_bow:     { slot: 'weapon', icon: '🏹', name: '狩人の短弓',     rarity: 'common', series: 'hunt', atk: 0.06, explode: 0.25 },
-  hunt_helm:    { slot: 'helmet', icon: '🪶', name: '狩人の羽根帽',   rarity: 'common', series: 'hunt', hp: 10, nearAtk: 0.10 },
-  hunt_mail:    { slot: 'armor',  icon: '🦌', name: '狩人の鹿革胴着', rarity: 'common', series: 'hunt', cut: 0.03, thorns: 0.5 },
-  hunt_boots:   { slot: 'boots',  icon: '🥾', name: '狩人の革脚絆',   rarity: 'common', series: 'hunt', spd: 0.05, moveCut: 0.2 },
-  hunt_ring:    { slot: 'ring',   icon: '🦴', name: '狩人の骨指輪',   rarity: 'common', series: 'hunt', rate: 0.05, nearRapid: 0.2 },
-  hunt_charm:   { slot: 'amulet', icon: '🐺', name: '狩人の牙飾り',   rarity: 'common', series: 'hunt', summon: 0.06, grazeBlast: 0.4 },
+  hunt_bow:     { slot: 'weapon', icon: '🏹', name: '狩人の短弓',     rarity: 'common', series: 'hunt', atk: 0.06 },
+  hunt_helm:    { slot: 'helmet', icon: '🪶', name: '狩人の羽根帽',   rarity: 'common', series: 'hunt', hp: 10 },
+  hunt_mail:    { slot: 'armor',  icon: '🦌', name: '狩人の鹿革胴着', rarity: 'common', series: 'hunt', cut: 0.03 },
+  hunt_boots:   { slot: 'boots',  icon: '🥾', name: '狩人の革脚絆',   rarity: 'common', series: 'hunt', spd: 0.05 },
+  hunt_ring:    { slot: 'ring',   icon: '🦴', name: '狩人の骨指輪',   rarity: 'common', series: 'hunt', rate: 0.05 },
+  hunt_charm:   { slot: 'amulet', icon: '🐺', name: '狩人の牙飾り',   rarity: 'common', series: 'hunt', summon: 0.06 },
   // --- 通常: 星詠系統(epic。月虹の下位版 = 遠距離) ---
-  seer_bow:     { slot: 'weapon', icon: '✨', name: '星詠の宝弓',     rarity: 'epic', series: 'seer', atk: 0.15, farPow: 0.25 },
-  seer_helm:    { slot: 'helmet', icon: '⭐', name: '星詠の司祭冠',   rarity: 'epic', series: 'seer', hp: 32, farRate: 0.15 },
-  seer_mail:    { slot: 'armor',  icon: '🔭', name: '星詠の観星衣',   rarity: 'epic', series: 'seer', cut: 0.10, bulletCut: 0.1 },
-  seer_boots:   { slot: 'boots',  icon: '☁️', name: '星詠の雲沓',     rarity: 'epic', series: 'seer', spd: 0.12, stopShot: 0.25 },
-  seer_ring:    { slot: 'ring',   icon: '🪐', name: '星詠の連星環',   rarity: 'epic', series: 'seer', rate: 0.12, farMulti: 0.5 },
-  seer_charm:   { slot: 'amulet', icon: '🌟', name: '星詠の星屑袋',   rarity: 'epic', series: 'seer', summon: 0.14, grazeRange: 0.15 },
+  seer_bow:     { slot: 'weapon', icon: '✨', name: '星詠の宝弓',     rarity: 'epic', series: 'seer', atk: 0.15 },
+  seer_helm:    { slot: 'helmet', icon: '⭐', name: '星詠の司祭冠',   rarity: 'epic', series: 'seer', hp: 32 },
+  seer_mail:    { slot: 'armor',  icon: '🔭', name: '星詠の観星衣',   rarity: 'epic', series: 'seer', cut: 0.10 },
+  seer_boots:   { slot: 'boots',  icon: '☁️', name: '星詠の雲沓',     rarity: 'epic', series: 'seer', spd: 0.12 },
+  seer_ring:    { slot: 'ring',   icon: '🪐', name: '星詠の連星環',   rarity: 'epic', series: 'seer', rate: 0.12 },
+  seer_charm:   { slot: 'amulet', icon: '🌟', name: '星詠の星屑袋',   rarity: 'epic', series: 'seer', summon: 0.14 },
   // --- 通常: 銀狼系統(rare。陽炎の下位版 = グレイズ) ---
-  wolf_bow:     { slot: 'weapon', icon: '🌨️', name: '銀狼の牙弓',     rarity: 'rare', series: 'wolf', atk: 0.10, chargeShot: 1 },
-  wolf_helm:    { slot: 'helmet', icon: '🐾', name: '銀狼の毛皮兜',   rarity: 'rare', series: 'wolf', hp: 20, stopGraze: 0.2 },
-  wolf_mail:    { slot: 'armor',  icon: '🧥', name: '銀狼の外套',     rarity: 'rare', series: 'wolf', cut: 0.06, chargeGuard: 0.25 },
-  wolf_boots:   { slot: 'boots',  icon: '💨', name: '銀狼の疾走靴',   rarity: 'rare', series: 'wolf', spd: 0.08, grazeDash: 0.2 },
-  wolf_ring:    { slot: 'ring',   icon: '🌘', name: '銀狼の月牙輪',   rarity: 'rare', series: 'wolf', rate: 0.08, grazeDiag: 1 },
-  wolf_charm:   { slot: 'amulet', icon: '🎐', name: '銀狼の遠吠え笛', rarity: 'rare', series: 'wolf', summon: 0.10, chargeCap: 1 },
+  wolf_bow:     { slot: 'weapon', icon: '🌨️', name: '銀狼の牙弓',     rarity: 'rare', series: 'wolf', atk: 0.10 },
+  wolf_helm:    { slot: 'helmet', icon: '🐾', name: '銀狼の毛皮兜',   rarity: 'rare', series: 'wolf', hp: 20 },
+  wolf_mail:    { slot: 'armor',  icon: '🧥', name: '銀狼の外套',     rarity: 'rare', series: 'wolf', cut: 0.06 },
+  wolf_boots:   { slot: 'boots',  icon: '💨', name: '銀狼の疾走靴',   rarity: 'rare', series: 'wolf', spd: 0.08 },
+  wolf_ring:    { slot: 'ring',   icon: '🌘', name: '銀狼の月牙輪',   rarity: 'rare', series: 'wolf', rate: 0.08 },
+  wolf_charm:   { slot: 'amulet', icon: '🎐', name: '銀狼の遠吠え笛', rarity: 'rare', series: 'wolf', summon: 0.10 },
   // --- S級: 龍帝系統(近距離) ---
-  ryu_bow:      { slot: 'weapon', icon: '🐉', name: '龍帝の焔弓',     rarity: 'sclass', series: 'ryu', atk: 0.30, explode: 0.5 },
-  ryu_helm:     { slot: 'helmet', icon: '🐲', name: '龍帝の角冑',     rarity: 'sclass', series: 'ryu', hp: 60, nearAtk: 0.25 },
-  ryu_mail:     { slot: 'armor',  icon: '🔥', name: '龍帝の緋鱗鎧',   rarity: 'sclass', series: 'ryu', cut: 0.16, thorns: 1.0 },
-  ryu_boots:    { slot: 'boots',  icon: '🌋', name: '龍帝の焔脚',     rarity: 'sclass', series: 'ryu', spd: 0.20, moveCut: 0.4 },
-  ryu_ring:     { slot: 'ring',   icon: '🔱', name: '龍帝の焔環',     rarity: 'sclass', series: 'ryu', rate: 0.22, nearRapid: 0.4 },
-  ryu_charm:    { slot: 'amulet', icon: '🎴', name: '龍帝の逆鱗',     rarity: 'sclass', series: 'ryu', summon: 0.16, grazeBlast: 0.8 },
+  ryu_bow:      { slot: 'weapon', icon: '🐉', name: '龍帝の焔弓',     rarity: 'sclass', series: 'ryu', atk: 0.30 },
+  ryu_helm:     { slot: 'helmet', icon: '🐲', name: '龍帝の角冑',     rarity: 'sclass', series: 'ryu', hp: 60 },
+  ryu_mail:     { slot: 'armor',  icon: '🔥', name: '龍帝の緋鱗鎧',   rarity: 'sclass', series: 'ryu', cut: 0.16 },
+  ryu_boots:    { slot: 'boots',  icon: '🌋', name: '龍帝の焔脚',     rarity: 'sclass', series: 'ryu', spd: 0.20 },
+  ryu_ring:     { slot: 'ring',   icon: '🔱', name: '龍帝の焔環',     rarity: 'sclass', series: 'ryu', rate: 0.22 },
+  ryu_charm:    { slot: 'amulet', icon: '🎴', name: '龍帝の逆鱗',     rarity: 'sclass', series: 'ryu', summon: 0.16 },
   // --- S級: 月虹系統(遠距離) ---
-  gekko_bow:    { slot: 'weapon', icon: '🌈', name: '月虹の霊弓',     rarity: 'sclass', series: 'gekko', atk: 0.26, farPow: 0.5 },
-  gekko_helm:   { slot: 'helmet', icon: '🌙', name: '月虹の月冠',     rarity: 'sclass', series: 'gekko', hp: 60, farRate: 0.3 },
-  gekko_mail:   { slot: 'armor',  icon: '🌌', name: '月虹の夜羽衣',   rarity: 'sclass', series: 'gekko', cut: 0.16, bulletCut: 0.2 },
-  gekko_boots:  { slot: 'boots',  icon: '🌠', name: '月虹の星渡り',   rarity: 'sclass', series: 'gekko', spd: 0.24, stopShot: 0.5 },
-  gekko_ring:   { slot: 'ring',   icon: '💠', name: '月虹の指環',     rarity: 'sclass', series: 'gekko', rate: 0.22, farMulti: 1.0 },
-  gekko_charm:  { slot: 'amulet', icon: '🔮', name: '月虹の雫',       rarity: 'sclass', series: 'gekko', summon: 0.22, grazeRange: 0.3 },
+  gekko_bow:    { slot: 'weapon', icon: '🌈', name: '月虹の霊弓',     rarity: 'sclass', series: 'gekko', atk: 0.26 },
+  gekko_helm:   { slot: 'helmet', icon: '🌙', name: '月虹の月冠',     rarity: 'sclass', series: 'gekko', hp: 60 },
+  gekko_mail:   { slot: 'armor',  icon: '🌌', name: '月虹の夜羽衣',   rarity: 'sclass', series: 'gekko', cut: 0.16 },
+  gekko_boots:  { slot: 'boots',  icon: '🌠', name: '月虹の星渡り',   rarity: 'sclass', series: 'gekko', spd: 0.24 },
+  gekko_ring:   { slot: 'ring',   icon: '💠', name: '月虹の指環',     rarity: 'sclass', series: 'gekko', rate: 0.22 },
+  gekko_charm:  { slot: 'amulet', icon: '🔮', name: '月虹の雫',       rarity: 'sclass', series: 'gekko', summon: 0.22 },
   // --- S級: 陽炎系統(グレイズ) ---
-  kagero_bow:   { slot: 'weapon', icon: '🌫️', name: '陽炎の霞弓',     rarity: 'sclass', series: 'kagero', atk: 0.26, chargeShot: 2 },
-  kagero_helm:  { slot: 'helmet', icon: '🦋', name: '陽炎の蝶冠',     rarity: 'sclass', series: 'kagero', hp: 60, stopGraze: 0.4 },
-  kagero_mail:  { slot: 'armor',  icon: '🍃', name: '陽炎の薄衣',     rarity: 'sclass', series: 'kagero', cut: 0.16, chargeGuard: 0.5 },
-  kagero_boots: { slot: 'boots',  icon: '💫', name: '陽炎の残影靴',   rarity: 'sclass', series: 'kagero', spd: 0.24, grazeDash: 0.4 },
-  kagero_ring:  { slot: 'ring',   icon: '🪞', name: '陽炎の鏡環',     rarity: 'sclass', series: 'kagero', rate: 0.22, grazeDiag: 2 },
-  kagero_charm: { slot: 'amulet', icon: '🫧', name: '陽炎の泡珠',     rarity: 'sclass', series: 'kagero', summon: 0.18, chargeCap: 2 },
+  kagero_bow:   { slot: 'weapon', icon: '🌫️', name: '陽炎の霞弓',     rarity: 'sclass', series: 'kagero', atk: 0.26 },
+  kagero_helm:  { slot: 'helmet', icon: '🦋', name: '陽炎の蝶冠',     rarity: 'sclass', series: 'kagero', hp: 60 },
+  kagero_mail:  { slot: 'armor',  icon: '🍃', name: '陽炎の薄衣',     rarity: 'sclass', series: 'kagero', cut: 0.16 },
+  kagero_boots: { slot: 'boots',  icon: '💫', name: '陽炎の残影靴',   rarity: 'sclass', series: 'kagero', spd: 0.24 },
+  kagero_ring:  { slot: 'ring',   icon: '🪞', name: '陽炎の鏡環',     rarity: 'sclass', series: 'kagero', rate: 0.22 },
+  kagero_charm: { slot: 'amulet', icon: '🫧', name: '陽炎の泡珠',     rarity: 'sclass', series: 'kagero', summon: 0.18 },
 };
 
 // アイテム効果の日本語説明(装備画面・ガチャ結果・火力表で共用)
