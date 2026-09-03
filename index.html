@@ -2468,6 +2468,7 @@ const EQUIP_SLOTS = {
 // 部位固有効果は**レア度の段の梯子**(fx)で持つ: 部位ごとに1つの効果キーと、コモン→S級の
 // 5段の加算値(EQUIP_FX_TIERS の順)。アイテムには自分のレア度以下の段が全部乗る(品質スキルと
 // 同じ方式。qualityBonuses が展開する)ので、同じ系統でもレア度が上がるほど効果行が増えて強くなる。
+// **固有効果はエピックで初めて発動する**(コモン・レアの段は 0。狩人・銀狼は基礎ステータス+系統ボーナスだけ)。
 // 通常系統は fxOf で対になるS級系統の梯子をそのまま使い、自分のレア度の段で止まる
 // = 「通常⊂S級」が構造として保証される(値は S級側にだけ書く)
 const EQUIP_FX_TIERS = ['common', 'rare', 'epic', 'legendary', 'sclass'];
@@ -2483,32 +2484,32 @@ const EQUIP_SERIES = {
   ryu:    { label: '龍帝', rarity: 'sclass', bonuses: [   // 近距離
     { need: 2, explodeRadius: 0.3 }, { need: 4, thorns: 0.5 }, { need: 6, explodeBurn: 1.0 }],
     fx: {                              //          コモン  レア  エピ  レジェ  S級   (累計)
-      weapon: { key: 'explode',    tiers: [0.20, 0.05, 0.10, 0.05, 0.10] },   // 爆発率 .20/.25/.35/.40/.50
-      helmet: { key: 'nearAtk',    tiers: [0.08, 0.04, 0.05, 0.03, 0.05] },   // 至近攻撃 .08/.12/.17/.20/.25
-      armor:  { key: 'thorns',     tiers: [0.40, 0.15, 0.20, 0.10, 0.15] },   // 反射 .40/.55/.75/.85/1.0
-      boots:  { key: 'moveCut',    tiers: [0.15, 0.05, 0.08, 0.05, 0.07] },   // 移動中軽減 .15/.20/.28/.33/.40
-      ring:   { key: 'nearRapid',  tiers: [0.15, 0.05, 0.08, 0.05, 0.07] },   // 至近連射 .15/.20/.28/.33/.40
-      amulet: { key: 'grazeBlast', tiers: [0.30, 0.10, 0.15, 0.10, 0.15] },   // グレイズ爆発 .30/.40/.55/.65/.80
+      weapon: { key: 'explode',    tiers: [0, 0, 0.25, 0.10, 0.15] },   // 爆発率 エピ.25/レジェ.35/S.50
+      helmet: { key: 'nearAtk',    tiers: [0, 0, 0.12, 0.05, 0.08] },   // 至近攻撃 .12/.17/.25
+      armor:  { key: 'thorns',     tiers: [0, 0, 0.50, 0.20, 0.30] },   // 反射 .50/.70/1.0
+      boots:  { key: 'moveCut',    tiers: [0, 0, 0.20, 0.08, 0.12] },   // 移動中軽減 .20/.28/.40
+      ring:   { key: 'nearRapid',  tiers: [0, 0, 0.20, 0.08, 0.12] },   // 至近連射 .20/.28/.40
+      amulet: { key: 'grazeBlast', tiers: [0, 0, 0.40, 0.15, 0.25] },   // グレイズ爆発 .40/.55/.80
     } },
   gekko:  { label: '月虹', rarity: 'sclass', bonuses: [   // 遠距離
     { need: 2, farPow: 0.2 }, { need: 4, farRate: 0.15 }, { need: 6, farPierce: 2 }],
     fx: {
-      weapon: { key: 'farPow',     tiers: [0.15, 0.05, 0.10, 0.08, 0.12] },   // 飛距離威力 .15/.20/.30/.38/.50
-      helmet: { key: 'farRate',    tiers: [0.10, 0.03, 0.05, 0.05, 0.07] },   // 遠距離攻速 .10/.13/.18/.23/.30
-      armor:  { key: 'bulletCut',  tiers: [0.06, 0.02, 0.04, 0.03, 0.05] },   // 弾軽減 .06/.08/.12/.15/.20
-      boots:  { key: 'stopShot',   tiers: [0.15, 0.05, 0.10, 0.08, 0.12] },   // 初弾 .15/.20/.30/.38/.50
-      ring:   { key: 'farMulti',   tiers: [0.30, 0.10, 0.20, 0.15, 0.25] },   // 追加矢率 .30/.40/.60/.75/1.0
-      amulet: { key: 'grazeRange', tiers: [0.10, 0.03, 0.05, 0.05, 0.07] },   // 判定半径 .10/.13/.18/.23/.30
+      weapon: { key: 'farPow',     tiers: [0, 0, 0.25, 0.10, 0.15] },   // 飛距離威力 .25/.35/.50
+      helmet: { key: 'farRate',    tiers: [0, 0, 0.15, 0.05, 0.10] },   // 遠距離攻速 .15/.20/.30
+      armor:  { key: 'bulletCut',  tiers: [0, 0, 0.10, 0.04, 0.06] },   // 弾軽減 .10/.14/.20
+      boots:  { key: 'stopShot',   tiers: [0, 0, 0.25, 0.10, 0.15] },   // 初弾 .25/.35/.50
+      ring:   { key: 'farMulti',   tiers: [0, 0, 0.50, 0.20, 0.30] },   // 追加矢率 .50/.70/1.0
+      amulet: { key: 'grazeRange', tiers: [0, 0, 0.15, 0.05, 0.10] },   // 判定半径 .15/.20/.30
     } },
   kagero: { label: '陽炎', rarity: 'sclass', bonuses: [   // グレイズ
     { need: 2, graze: 0.3 }, { need: 4, chargeGuard: 0.25 }, { need: 6, grazeWave: 1.0 }],
     fx: {
-      weapon: { key: 'chargeShot',  tiers: [1, 0, 0, 0, 1] },                 // 強化ショット貫通 1 → S級で 2
-      helmet: { key: 'stopGraze',   tiers: [0.15, 0.05, 0.08, 0.05, 0.07] },  // 構え中の判定半径 .15/.20/.28/.33/.40
-      armor:  { key: 'chargeGuard', tiers: [0.20, 0.05, 0.10, 0.05, 0.10] },  // チャージ防御 .20/.25/.35/.40/.50
-      boots:  { key: 'grazeDash',   tiers: [0.15, 0.05, 0.08, 0.05, 0.07] },  // 加速 .15/.20/.28/.33/.40
-      ring:   { key: 'grazeDiag',   tiers: [1, 0, 0, 0, 1] },                 // 斜め矢 1本 → S級で 2本
-      amulet: { key: 'chargeCap',   tiers: [1, 0, 0, 0, 1] },                 // 上限 +1 → S級で +2
+      weapon: { key: 'chargeShot',  tiers: [0, 0, 1, 0, 1] },                 // 強化ショット貫通 エピ1 → S級2
+      helmet: { key: 'stopGraze',   tiers: [0, 0, 0.20, 0.08, 0.12] },  // 構え中の判定半径 .20/.28/.40
+      armor:  { key: 'chargeGuard', tiers: [0, 0, 0.25, 0.10, 0.15] },  // チャージ防御 .25/.35/.50
+      boots:  { key: 'grazeDash',   tiers: [0, 0, 0.20, 0.08, 0.12] },  // 加速 .20/.28/.40
+      ring:   { key: 'grazeDiag',   tiers: [0, 0, 1, 0, 1] },                 // 斜め矢 エピ1本 → S級2本
+      amulet: { key: 'chargeCap',   tiers: [0, 0, 1, 0, 1] },                 // 上限 エピ+1 → S級+2
     } },
 };
 
