@@ -910,6 +910,21 @@ const CONFIG = {
       weights: { common: 54, rare: 30, epic: 12, legendary: 3, sclass: 1 },
     },
     rewards: { wave: 10, boss: 40 },  // 通常ウェーブ / ボスウェーブのクリアで得るコイン
+    // 部位固有効果の土台。系統(近距離=龍帝 / 遠距離=月虹 / グレイズ=陽炎)ごとに部位の役割が
+    // 「武器=矢の性質 / 兜=構え中 / 鎧=被弾・接触 / 靴=移動 / 指輪=連射 / お守り=グレイズ」で固定され、
+    // 効果キー(EQUIP_FX_KEYS)の数値は装備・系統ボーナスから加算で集まる(強化Lvでは伸びない)
+    slotFx: {
+      nearDist: 4, farDist: 10,       // 「至近」「遠距離」の距離しきい値(龍帝・月虹の判定に共通)
+      explodeRadius: 1.6, explodeRatio: 0.6,   // 龍帝武器: 爆発の基準半径と威力(矢ダメージ比)
+      thornsKnockback: 1.8, thornsCd: 0.5,     // 龍帝鎧: 接触した敵を押し返す距離と、同じ敵への再発動間隔
+      nearRapidDur: 1.5,              // 龍帝指輪: 至近ヒット後の連射アップの持続秒
+      grazeBlastRadius: 2.2,          // 龍帝お守り: グレイズ成立時の爆発半径(威力は grazeBlast × 矢ダメージ)
+      grazeDashDur: 1.2,              // 陽炎靴: グレイズ成立後の加速の持続秒
+      grazeDiagAngle: Math.PI / 4,    // 陽炎指輪: 斜め矢の角度(射線から左右45°)
+      chargeShotScale: 1.3,           // 陽炎武器: 強化ショットの矢の大きさ(当たり判定も同倍)
+      grazeWaveRadius: 2.5, grazeWaveCd: 0.5,  // 陽炎6部位: 衝撃波の半径と再発動間隔
+      diagCd: 0.25, blastCd: 0.3,     // グレイズ由来の矢・爆発の再発動間隔(月蝕・衝撃波の連鎖で暴走しないように)
+    },
   },
   // 召喚攻撃(星・霊剣・守護者)とエレメント。スキルで手に入る追加攻撃手段の数値はここに集約
   arts: {
@@ -1723,7 +1738,7 @@ function updatePlayerAnimation(dt) {
   if (graze.rangeFlash > 0) graze.rangeFlash = Math.max(0, graze.rangeFlash - dt);
   P.grazeRing.material.opacity = gz.rangeRingOpacity +
     (gz.rangeRingFlashOpacity - gz.rangeRingOpacity) * (graze.rangeFlash / gz.rangeRingFlashDuration);
-  P.grazeRing.scale.setScalar(level.stats.grazeRange);   // 弾幕遊戯の範囲拡大を見た目にも反映
+  P.grazeRing.scale.setScalar(grazeRangeMul());   // 弾幕遊戯・装備の範囲拡大を見た目にも反映
 
   // 獅子の間合いのリング(takeSkill で遅延生成)。取得中だけ表示
   if (P.lionRing) P.lionRing.visible = !!level.stats.lion;
@@ -1740,6 +1755,12 @@ function resetPlayer() {
   player.fireTimer = 0;
   player.invincible = 0;
   player.moving = false;
+  // 装備の部位固有効果の状態(龍帝指輪の連射 / 陽炎靴の加速 / 月虹靴の初弾 / 月虹指輪の追加矢)
+  player.rapidT = 0;
+  player.dashT = 0;
+  player.firstShot = false;
+  player.wasMoving = false;
+  player.bonusArrows = 0;
   player.aiming = false;
   Object.assign(player.anim, { run: 0, runW: 0, aim: 0, draw: 0, drawGoal: 0, release: 0, idle: 0 });
   playerHpBar.lagRatio = 1;
@@ -1747,8 +1768,20 @@ function resetPlayer() {
   updatePlayerAnimation(0);
 }
 
-function damagePlayer(amount) {
+// src は撃ち主(敵弾の owner・接触した敵)、kind は 'bullet' / 'laser' / 'contact'(装備の軽減の種類分け)
+function damagePlayer(amount, src, kind) {
   if (player.invincible > 0 || state.phase !== 'playing') return;
+  // 装備の部位固有効果: 月虹鎧 = 弾・レーザーだけ軽減 / 龍帝靴 = 移動中の接触だけ軽減 /
+  // 陽炎鎧 = チャージを1つ消費してダメージ軽減(チャージが盾になる。闘気の構えの全損より先に引く)
+  const es = equipStats;
+  if (kind !== 'contact' && es.bulletCut > 0) amount *= 1 - Math.min(0.6, es.bulletCut);
+  if (kind === 'contact' && player.moving && es.moveCut > 0) amount *= 1 - Math.min(0.6, es.moveCut);
+  if (es.chargeGuard > 0 && graze.charges > 0) {
+    graze.charges--;
+    amount *= 1 - Math.min(0.8, es.chargeGuard);
+    spawnReactionText(player.mesh.position, 'チャージ防御', '#6fc3ff');
+    updateGrazeHud();
+  }
   // 装備(鎧)の被ダメ軽減。最低1は必ず通す(不死身防止)
   player.hp -= Math.max(1, Math.round(amount * (1 - level.stats.dmgCut)));
   player.invincible = CONFIG.player.hitInvincible;
@@ -1780,6 +1813,9 @@ function makePool(size, buildMesh) {
     items.push({
       mesh, active: false, vel: new THREE.Vector3(), damage: 0, life: 0,
       near: false, grazed: false, pierce: 0, hits: null, elems: null, crit: false,
+      // origin: 発射位置(月虹の「飛んだ距離」用)/ hitMul: 当たり判定倍率(陽炎の強化ショット)/
+      // farPierced: 遠距離貫通をもう付けたか
+      origin: new THREE.Vector3(), hitMul: 1, farPierced: false,
     });
   }
   return items;
@@ -1866,6 +1902,9 @@ function spawnFromPool(pool, pos, dir, speed, damage) {
     b.elems = null;
     b.crit = false;
     b.owner = null;                   // 敵弾の撃ち主(見切りの星の狙い先。プールの使い回しで残さない)
+    if (b.origin) b.origin.copy(pos); // 装備(月虹)の飛距離判定の起点
+    b.hitMul = 1;
+    b.farPierced = false;
     if (b.hits) b.hits.clear();
     if (pool === arrowPool) {
       b.mesh.lookAt(pos.clone().add(dir));
@@ -2175,14 +2214,82 @@ function onGraze(src) {
         CONFIG.fx.muzzle.size, 0xffffff);
     }
   }
+  // --- 装備の部位固有効果(グレイズ成立トリガー) ---
+  // 陽炎靴の加速 / 陽炎指輪の斜め矢 / 龍帝お守りの爆発 / 陽炎6部位の衝撃波。
+  // 月蝕のかき消しや衝撃波は1発ごとに onGraze を呼ぶので、矢・爆発・衝撃波は短い間隔で頭打ちにする
+  // (衝撃波が敵弾を消す → そのグレイズで再び衝撃波、の連鎖は waveCd が止める)
+  {
+    const es = equipStats;
+    const SF = CONFIG.equip.slotFx;
+    if (es.grazeDash > 0) player.dashT = SF.grazeDashDur;
+    if (es.grazeDiag > 0 && graze.diagCd <= 0) { graze.diagCd = SF.diagCd; fireDiagArrows(Math.round(es.grazeDiag)); }
+    const blastBase = CONFIG.player.arrowDamage * level.stats.damageMul;
+    if (es.grazeBlast > 0 && graze.blastCd <= 0) {
+      graze.blastCd = SF.blastCd;
+      equipBlast(p.x, p.z, SF.grazeBlastRadius, blastBase * es.grazeBlast, 0);
+    }
+    if (es.grazeWave > 0 && graze.waveCd <= 0) {
+      graze.waveCd = SF.grazeWaveCd;
+      spawnGrazeFx(p.x, p.z, SF.grazeWaveRadius * 0.8, 0x9fd8ff);
+      eclipseEat(p, SF.grazeWaveRadius);
+      equipBlast(p.x, p.z, SF.grazeWaveRadius, blastBase * es.grazeWave, 0);
+    }
+  }
   updateGrazeHud();
 }
 const _counterDir = new THREE.Vector3();   // 燕返しの矢の射線(フレーム中に new しない)
+const _knock = new THREE.Vector3();        // 龍帝鎧のノックバック方向
+
+// 陽炎指輪: グレイズ成立時に射線から左右45°へ矢を放つ(アーチャー伝説のダイアゴナルアロー)。
+// 射線は最寄りの敵(いなければ向いている方向)。2本なら左右対称、1本なら左右交互。
+// fireArrow を通すので攻撃力・貫通・属性・弦月の刃化は乗る(倍率は素の1倍)
+function fireDiagArrows(n) {
+  const p = player.mesh.position;
+  const t = nearestEnemy();
+  if (t) _counterDir.subVectors(t.mesh.position, p).setY(0).normalize();
+  else _counterDir.set(Math.sin(player.mesh.rotation.y), 0, Math.cos(player.mesh.rotation.y));
+  const origin = p.clone(); origin.y = 0.95;
+  const a = CONFIG.equip.slotFx.grazeDiagAngle;
+  for (let i = 0; i < n; i++) {
+    let sign;
+    if (n === 1) { graze.diagSide = -(graze.diagSide || 1); sign = graze.diagSide; }
+    else sign = i % 2 === 0 ? 1 : -1;
+    const tier = Math.floor(i / 2) + 1;   // 3本目以降は外側へ(45°→90°)
+    fireArrow(origin, _counterDir, a * sign * tier, CONFIG.player.arrowSpeed, CONFIG.player.arrowDamage, 1);
+  }
+}
+
+// 装備由来の範囲ダメージ(龍帝武器の爆発 / 龍帝お守りのグレイズ爆発 / 陽炎6部位の衝撃波)。
+// 星の着弾(starImpact)と同じ流儀で、burnChance があれば当たった敵に確率で燃焼を残す
+const BLAST_BURN_ELEMS = ['fire'];
+function equipBlast(x, z, radius, dmg, burnChance) {
+  spawnGrazeFx(x, z, radius * 0.7, 0xffa04c);
+  spawnFlash(x, 0.5, z, CONFIG.fx.muzzle.size * 1.4, 0xffb060);
+  for (let i = enemies.length - 1; i >= 0; i--) {
+    const e = enemies[i];
+    const dx = e.mesh.position.x - x, dz = e.mesh.position.z - z;
+    const r = radius + e.def.radius;
+    if (dx * dx + dz * dz > r * r) continue;
+    if (burnChance > 0 && Math.random() < burnChance) applyElems(e, dmg, BLAST_BURN_ELEMS);
+    if (e.hpBar) damageEnemy(e, dmg, 'dot');
+  }
+}
+
+// 月虹武器: 矢が飛んだ距離で威力が上がる(farDist で最大)
+function farPowMul(flew) {
+  return 1 + equipStats.farPow * clamp(flew / CONFIG.equip.slotFx.farDist, 0, 1);
+}
+// グレイズ判定半径の倍率。弾幕遊戯(level.stats.grazeRange。月虹お守りも焼き込み済み)に
+// 陽炎兜の「構えている間だけ」の拡大を掛ける
+function grazeRangeMul() {
+  return level.stats.grazeRange * (!player.moving && equipStats.stopGraze > 0 ? 1 + equipStats.stopGraze : 1);
+}
 
 // チャージ消費時の攻撃倍率。grazeup スキルで 2倍 → 2.5倍 → 3倍 と伸びる
 const grazeShotMul = () => 1 + (CONFIG.graze.damageMul - 1) * level.stats.grazeMul + level.stats.grazeFlat;
 // チャージ上限(闘気の構えで10に拡張)
-const grazeChargeCap = () => (level.stats.zanshin ? level.stats.zanshin.chargeCap : CONFIG.graze.chargeMax);
+const grazeChargeCap = () => (level.stats.zanshin ? level.stats.zanshin.chargeCap : CONFIG.graze.chargeMax)
+  + Math.round(equipStats.chargeCap);   // 陽炎お守り・銀狼お守りの上限加算
 // 闘気の構えの常時倍率: 満タンで強化ショットと同じ倍率になる(チャージ数に比例)
 const zanshinMul = () => 1 + (grazeShotMul() - 1) * (graze.charges / grazeChargeCap());
 
@@ -2190,6 +2297,8 @@ function resetGraze() {
   graze.charges = 0;
   graze.rangeFlash = 0;
   graze.arrowCd = 0;
+  graze.diagCd = 0; graze.blastCd = 0; graze.waveCd = 0;   // 装備のグレイズ効果の再発動間隔
+  graze.diagSide = 1;
   for (const fx of grazeFxPool) { fx.life = 0; fx.mesh.visible = false; }
   updateGrazeHud();
 }
@@ -2345,26 +2454,32 @@ const EQUIP_SLOTS = {
 // そろえて装備すると系統ボーナスが発動する(2/4/6部位の3段。全段が累積で乗る)。
 // ボーナスの効果キーはアイテムと同じ(atk/hp/cut/spd/rate/summon/graze)で、
 // 強化Lvでは伸びない固定値。rarity はその系統の全部位のレアリティで、
-// 通常装備3系統(狩人/銀狼/星詠)と S級装備3系統(龍帝/鳳凰/月虹)がある。
+// 通常装備3系統(狩人/星詠/銀狼)と S級装備3系統(龍帝/月虹/陽炎)がある。
 // 系統を増やすときはここにエントリを足し、EQUIP_ITEMS に series 付きの6部位を足す。
 // 通常3系統は S級3系統の**完全下位互換**: 部位ごとの効果キーもボーナス段の効果キーも
-// 対になる S級系統と同一で、数値だけすべて下(狩人⊂龍帝 / 銀狼⊂鳳凰 / 星詠⊂月虹)。
+// 対になる S級系統と同一で、数値だけすべて下(狩人⊂龍帝 / 星詠⊂月虹 / 銀狼⊂陽炎)。
 // 通常で組んだセットの上位を引いたらそのまま置き換えられる、という導線を作る
+// 3系統はアーチャー伝説の「近距離用 / 遠距離用 / 汎用」の流儀で、プレイスタイルごとに部位の
+// 効果が丸ごと違う(効果キーは EQUIP_FX_KEYS、土台の数値は CONFIG.equip.slotFx):
+//   龍帝 = 近距離: 爆発・至近強化・反射・移動中の接触軽減・至近連射・グレイズ爆発
+//   月虹 = 遠距離: 飛距離威力・遠距離攻速・弾軽減・停止直後の初弾強化・遠距離ヒットで矢+1・判定半径
+//   陽炎 = グレイズ: 強化ショット貫通・構え中の判定半径・チャージ防御・グレイズ加速・斜め矢・上限+
+// 系統ボーナスはそのスタイルを深める段で、6部位で完成効果(燃焼爆発 / 遠距離貫通 / 衝撃波)が出る
 const EQUIP_SERIES = {
   // --- 通常装備3系統(S級の下位版) ---
-  hunt:  { label: '狩人', rarity: 'common', bonuses: [   // 龍帝の下位版(攻撃)
-    { need: 2, atk: 0.02 }, { need: 4, rate: 0.03 }, { need: 6, atk: 0.05 }] },
-  wolf:  { label: '銀狼', rarity: 'rare',   bonuses: [   // 鳳凰の下位版(生存)
-    { need: 2, hp: 10 }, { need: 4, cut: 0.02 }, { need: 6, hp: 15, cut: 0.02 }] },
-  seer:  { label: '星詠', rarity: 'epic',   bonuses: [   // 月虹の下位版(召喚・グレイズ)
-    { need: 2, summon: 0.06 }, { need: 4, graze: 0.15 }, { need: 6, summon: 0.1, graze: 0.15 }] },
+  hunt:   { label: '狩人', rarity: 'common', bonuses: [   // 龍帝の下位版
+    { need: 2, explodeRadius: 0.15 }, { need: 4, thorns: 0.25 }, { need: 6, explodeBurn: 0.5 }] },
+  seer:   { label: '星詠', rarity: 'epic',   bonuses: [   // 月虹の下位版
+    { need: 2, farPow: 0.1 }, { need: 4, farRate: 0.08 }, { need: 6, farPierce: 1 }] },
+  wolf:   { label: '銀狼', rarity: 'rare',   bonuses: [   // 陽炎の下位版
+    { need: 2, graze: 0.15 }, { need: 4, chargeGuard: 0.1 }, { need: 6, grazeWave: 0.5 }] },
   // --- S級装備3系統 ---
-  ryu:   { label: '龍帝', rarity: 'sclass', bonuses: [   // 攻撃特化
-    { need: 2, atk: 0.05 }, { need: 4, rate: 0.06 }, { need: 6, atk: 0.12 }] },
-  hoo:   { label: '鳳凰', rarity: 'sclass', bonuses: [   // 生存特化
-    { need: 2, hp: 20 }, { need: 4, cut: 0.05 }, { need: 6, hp: 40, cut: 0.05 }] },
-  gekko: { label: '月虹', rarity: 'sclass', bonuses: [   // 召喚・グレイズ特化
-    { need: 2, summon: 0.08 }, { need: 4, graze: 0.3 }, { need: 6, summon: 0.15, graze: 0.3 }] },
+  ryu:    { label: '龍帝', rarity: 'sclass', bonuses: [   // 近距離
+    { need: 2, explodeRadius: 0.3 }, { need: 4, thorns: 0.5 }, { need: 6, explodeBurn: 1.0 }] },
+  gekko:  { label: '月虹', rarity: 'sclass', bonuses: [   // 遠距離
+    { need: 2, farPow: 0.2 }, { need: 4, farRate: 0.15 }, { need: 6, farPierce: 2 }] },
+  kagero: { label: '陽炎', rarity: 'sclass', bonuses: [   // グレイズ
+    { need: 2, graze: 0.3 }, { need: 4, chargeGuard: 0.25 }, { need: 6, grazeWave: 1.0 }] },
 };
 
 // 品質ボーナス(レア度スキル)。部位ごとにレア度の段の梯子を持ち、アイテムには
@@ -2468,48 +2583,50 @@ const EQUIP_ITEMS = {
   // S級は legendary の約1.3〜1.4倍の基礎値+副ステータス持ち。
   // 通常3系統は対になる S級系統の完全下位互換: 部位ごとの効果キーを S級側と同一にし、
   // 数値だけすべて下げてある(EQUIP_SERIES のコメント参照)
-  // --- 通常: 狩人系統(common。龍帝の下位版 = 攻撃) ---
-  hunt_bow:     { slot: 'weapon', icon: '🏹', name: '狩人の短弓',     rarity: 'common', series: 'hunt', atk: 0.06 },
-  hunt_helm:    { slot: 'helmet', icon: '🪶', name: '狩人の羽根帽',   rarity: 'common', series: 'hunt', hp: 10, atk: 0.01 },
-  hunt_mail:    { slot: 'armor',  icon: '🦌', name: '狩人の鹿革胴着', rarity: 'common', series: 'hunt', cut: 0.03, atk: 0.01 },
-  hunt_boots:   { slot: 'boots',  icon: '🥾', name: '狩人の革脚絆',   rarity: 'common', series: 'hunt', spd: 0.05, atk: 0.01 },
-  hunt_ring:    { slot: 'ring',   icon: '🦴', name: '狩人の骨指輪',   rarity: 'common', series: 'hunt', rate: 0.05, atk: 0.01 },
-  hunt_charm:   { slot: 'amulet', icon: '🐺', name: '狩人の牙飾り',   rarity: 'common', series: 'hunt', summon: 0.06, atk: 0.01 },
-  // --- 通常: 銀狼系統(rare。鳳凰の下位版 = 生存) ---
-  wolf_bow:     { slot: 'weapon', icon: '🌨️', name: '銀狼の牙弓',     rarity: 'rare', series: 'wolf', atk: 0.10, hp: 4 },
-  wolf_helm:    { slot: 'helmet', icon: '🐾', name: '銀狼の毛皮兜',   rarity: 'rare', series: 'wolf', hp: 20 },
-  wolf_mail:    { slot: 'armor',  icon: '🧥', name: '銀狼の外套',     rarity: 'rare', series: 'wolf', cut: 0.06, hp: 8 },
-  wolf_boots:   { slot: 'boots',  icon: '💨', name: '銀狼の疾走靴',   rarity: 'rare', series: 'wolf', spd: 0.08, hp: 3 },
-  wolf_ring:    { slot: 'ring',   icon: '🌘', name: '銀狼の月牙輪',   rarity: 'rare', series: 'wolf', rate: 0.08, hp: 3 },
-  wolf_charm:   { slot: 'amulet', icon: '🎐', name: '銀狼の遠吠え笛', rarity: 'rare', series: 'wolf', summon: 0.10, hp: 4 },
-  // --- 通常: 星詠系統(epic。月虹の下位版 = 召喚・グレイズ) ---
-  seer_bow:     { slot: 'weapon', icon: '✨', name: '星詠の宝弓',     rarity: 'epic', series: 'seer', atk: 0.15, graze: 0.05 },
-  seer_helm:    { slot: 'helmet', icon: '⭐', name: '星詠の司祭冠',   rarity: 'epic', series: 'seer', hp: 32, summon: 0.03 },
-  seer_mail:    { slot: 'armor',  icon: '🔭', name: '星詠の観星衣',   rarity: 'epic', series: 'seer', cut: 0.10, summon: 0.03 },
-  seer_boots:   { slot: 'boots',  icon: '☁️', name: '星詠の雲沓',     rarity: 'epic', series: 'seer', spd: 0.12 },
-  seer_ring:    { slot: 'ring',   icon: '🪐', name: '星詠の連星環',   rarity: 'epic', series: 'seer', rate: 0.12, summon: 0.03 },
-  seer_charm:   { slot: 'amulet', icon: '🌟', name: '星詠の星屑袋',   rarity: 'epic', series: 'seer', summon: 0.14, graze: 0.1 },
-  // --- S級: 龍帝系統(攻撃特化。副ステータスも攻撃) ---
-  ryu_bow:      { slot: 'weapon', icon: '🐉', name: '龍帝の焔弓',     rarity: 'sclass', series: 'ryu', atk: 0.30 },
-  ryu_helm:     { slot: 'helmet', icon: '🐲', name: '龍帝の角冑',     rarity: 'sclass', series: 'ryu', hp: 60, atk: 0.04 },
-  ryu_mail:     { slot: 'armor',  icon: '🔥', name: '龍帝の緋鱗鎧',   rarity: 'sclass', series: 'ryu', cut: 0.16, atk: 0.04 },
-  ryu_boots:    { slot: 'boots',  icon: '🌋', name: '龍帝の焔脚',     rarity: 'sclass', series: 'ryu', spd: 0.20, atk: 0.04 },
-  ryu_ring:     { slot: 'ring',   icon: '🔱', name: '龍帝の焔環',     rarity: 'sclass', series: 'ryu', rate: 0.22, atk: 0.04 },
-  ryu_charm:    { slot: 'amulet', icon: '🎴', name: '龍帝の逆鱗',     rarity: 'sclass', series: 'ryu', summon: 0.16, atk: 0.04 },
-  // --- S級: 鳳凰系統(生存特化。副ステータスはHP) ---
-  hoo_bow:      { slot: 'weapon', icon: '🪶', name: '鳳凰の翼弓',     rarity: 'sclass', series: 'hoo', atk: 0.26, hp: 15 },
-  hoo_helm:     { slot: 'helmet', icon: '🔆', name: '鳳凰の羽冠',     rarity: 'sclass', series: 'hoo', hp: 75 },
-  hoo_mail:     { slot: 'armor',  icon: '🦚', name: '鳳凰の緋羽衣',   rarity: 'sclass', series: 'hoo', cut: 0.20, hp: 20 },
-  hoo_boots:    { slot: 'boots',  icon: '🕊️', name: '鳳凰の風切羽',   rarity: 'sclass', series: 'hoo', spd: 0.22, hp: 10 },
-  hoo_ring:     { slot: 'ring',   icon: '☀️', name: '鳳凰の陽輪',     rarity: 'sclass', series: 'hoo', rate: 0.20, hp: 10 },
-  hoo_charm:    { slot: 'amulet', icon: '🥚', name: '鳳凰の暁玉',     rarity: 'sclass', series: 'hoo', summon: 0.18, hp: 15 },
-  // --- S級: 月虹系統(召喚・グレイズ特化) ---
-  gekko_bow:    { slot: 'weapon', icon: '🌈', name: '月虹の霊弓',     rarity: 'sclass', series: 'gekko', atk: 0.26, graze: 0.1 },
-  gekko_helm:   { slot: 'helmet', icon: '🌙', name: '月虹の月冠',     rarity: 'sclass', series: 'gekko', hp: 60, summon: 0.06 },
-  gekko_mail:   { slot: 'armor',  icon: '🌌', name: '月虹の夜羽衣',   rarity: 'sclass', series: 'gekko', cut: 0.16, summon: 0.06 },
-  gekko_boots:  { slot: 'boots',  icon: '🌠', name: '月虹の星渡り',   rarity: 'sclass', series: 'gekko', spd: 0.24 },
-  gekko_ring:   { slot: 'ring',   icon: '💠', name: '月虹の指環',     rarity: 'sclass', series: 'gekko', rate: 0.22, summon: 0.06 },
-  gekko_charm:  { slot: 'amulet', icon: '🔮', name: '月虹の雫',       rarity: 'sclass', series: 'gekko', summon: 0.22, graze: 0.2 },
+  // 系統アイテムは基礎ステータスに加えて**部位固有効果**(EQUIP_FX_KEYS のキー)を1つ持つ。
+  // 固有効果は強化Lvでは伸びない固定値(itemStatAt)。通常系統は対になるS級と同じキーで数値が下
+  // --- 通常: 狩人系統(common。龍帝の下位版 = 近距離) ---
+  hunt_bow:     { slot: 'weapon', icon: '🏹', name: '狩人の短弓',     rarity: 'common', series: 'hunt', atk: 0.06, explode: 0.25 },
+  hunt_helm:    { slot: 'helmet', icon: '🪶', name: '狩人の羽根帽',   rarity: 'common', series: 'hunt', hp: 10, nearAtk: 0.10 },
+  hunt_mail:    { slot: 'armor',  icon: '🦌', name: '狩人の鹿革胴着', rarity: 'common', series: 'hunt', cut: 0.03, thorns: 0.5 },
+  hunt_boots:   { slot: 'boots',  icon: '🥾', name: '狩人の革脚絆',   rarity: 'common', series: 'hunt', spd: 0.05, moveCut: 0.2 },
+  hunt_ring:    { slot: 'ring',   icon: '🦴', name: '狩人の骨指輪',   rarity: 'common', series: 'hunt', rate: 0.05, nearRapid: 0.2 },
+  hunt_charm:   { slot: 'amulet', icon: '🐺', name: '狩人の牙飾り',   rarity: 'common', series: 'hunt', summon: 0.06, grazeBlast: 0.4 },
+  // --- 通常: 星詠系統(epic。月虹の下位版 = 遠距離) ---
+  seer_bow:     { slot: 'weapon', icon: '✨', name: '星詠の宝弓',     rarity: 'epic', series: 'seer', atk: 0.15, farPow: 0.25 },
+  seer_helm:    { slot: 'helmet', icon: '⭐', name: '星詠の司祭冠',   rarity: 'epic', series: 'seer', hp: 32, farRate: 0.15 },
+  seer_mail:    { slot: 'armor',  icon: '🔭', name: '星詠の観星衣',   rarity: 'epic', series: 'seer', cut: 0.10, bulletCut: 0.1 },
+  seer_boots:   { slot: 'boots',  icon: '☁️', name: '星詠の雲沓',     rarity: 'epic', series: 'seer', spd: 0.12, stopShot: 0.25 },
+  seer_ring:    { slot: 'ring',   icon: '🪐', name: '星詠の連星環',   rarity: 'epic', series: 'seer', rate: 0.12, farMulti: 0.5 },
+  seer_charm:   { slot: 'amulet', icon: '🌟', name: '星詠の星屑袋',   rarity: 'epic', series: 'seer', summon: 0.14, grazeRange: 0.15 },
+  // --- 通常: 銀狼系統(rare。陽炎の下位版 = グレイズ) ---
+  wolf_bow:     { slot: 'weapon', icon: '🌨️', name: '銀狼の牙弓',     rarity: 'rare', series: 'wolf', atk: 0.10, chargeShot: 1 },
+  wolf_helm:    { slot: 'helmet', icon: '🐾', name: '銀狼の毛皮兜',   rarity: 'rare', series: 'wolf', hp: 20, stopGraze: 0.2 },
+  wolf_mail:    { slot: 'armor',  icon: '🧥', name: '銀狼の外套',     rarity: 'rare', series: 'wolf', cut: 0.06, chargeGuard: 0.25 },
+  wolf_boots:   { slot: 'boots',  icon: '💨', name: '銀狼の疾走靴',   rarity: 'rare', series: 'wolf', spd: 0.08, grazeDash: 0.2 },
+  wolf_ring:    { slot: 'ring',   icon: '🌘', name: '銀狼の月牙輪',   rarity: 'rare', series: 'wolf', rate: 0.08, grazeDiag: 1 },
+  wolf_charm:   { slot: 'amulet', icon: '🎐', name: '銀狼の遠吠え笛', rarity: 'rare', series: 'wolf', summon: 0.10, chargeCap: 1 },
+  // --- S級: 龍帝系統(近距離) ---
+  ryu_bow:      { slot: 'weapon', icon: '🐉', name: '龍帝の焔弓',     rarity: 'sclass', series: 'ryu', atk: 0.30, explode: 0.5 },
+  ryu_helm:     { slot: 'helmet', icon: '🐲', name: '龍帝の角冑',     rarity: 'sclass', series: 'ryu', hp: 60, nearAtk: 0.25 },
+  ryu_mail:     { slot: 'armor',  icon: '🔥', name: '龍帝の緋鱗鎧',   rarity: 'sclass', series: 'ryu', cut: 0.16, thorns: 1.0 },
+  ryu_boots:    { slot: 'boots',  icon: '🌋', name: '龍帝の焔脚',     rarity: 'sclass', series: 'ryu', spd: 0.20, moveCut: 0.4 },
+  ryu_ring:     { slot: 'ring',   icon: '🔱', name: '龍帝の焔環',     rarity: 'sclass', series: 'ryu', rate: 0.22, nearRapid: 0.4 },
+  ryu_charm:    { slot: 'amulet', icon: '🎴', name: '龍帝の逆鱗',     rarity: 'sclass', series: 'ryu', summon: 0.16, grazeBlast: 0.8 },
+  // --- S級: 月虹系統(遠距離) ---
+  gekko_bow:    { slot: 'weapon', icon: '🌈', name: '月虹の霊弓',     rarity: 'sclass', series: 'gekko', atk: 0.26, farPow: 0.5 },
+  gekko_helm:   { slot: 'helmet', icon: '🌙', name: '月虹の月冠',     rarity: 'sclass', series: 'gekko', hp: 60, farRate: 0.3 },
+  gekko_mail:   { slot: 'armor',  icon: '🌌', name: '月虹の夜羽衣',   rarity: 'sclass', series: 'gekko', cut: 0.16, bulletCut: 0.2 },
+  gekko_boots:  { slot: 'boots',  icon: '🌠', name: '月虹の星渡り',   rarity: 'sclass', series: 'gekko', spd: 0.24, stopShot: 0.5 },
+  gekko_ring:   { slot: 'ring',   icon: '💠', name: '月虹の指環',     rarity: 'sclass', series: 'gekko', rate: 0.22, farMulti: 1.0 },
+  gekko_charm:  { slot: 'amulet', icon: '🔮', name: '月虹の雫',       rarity: 'sclass', series: 'gekko', summon: 0.22, grazeRange: 0.3 },
+  // --- S級: 陽炎系統(グレイズ) ---
+  kagero_bow:   { slot: 'weapon', icon: '🌫️', name: '陽炎の霞弓',     rarity: 'sclass', series: 'kagero', atk: 0.26, chargeShot: 2 },
+  kagero_helm:  { slot: 'helmet', icon: '🦋', name: '陽炎の蝶冠',     rarity: 'sclass', series: 'kagero', hp: 60, stopGraze: 0.4 },
+  kagero_mail:  { slot: 'armor',  icon: '🍃', name: '陽炎の薄衣',     rarity: 'sclass', series: 'kagero', cut: 0.16, chargeGuard: 0.5 },
+  kagero_boots: { slot: 'boots',  icon: '💫', name: '陽炎の残影靴',   rarity: 'sclass', series: 'kagero', spd: 0.24, grazeDash: 0.4 },
+  kagero_ring:  { slot: 'ring',   icon: '🪞', name: '陽炎の鏡環',     rarity: 'sclass', series: 'kagero', rate: 0.22, grazeDiag: 2 },
+  kagero_charm: { slot: 'amulet', icon: '🫧', name: '陽炎の泡珠',     rarity: 'sclass', series: 'kagero', summon: 0.18, chargeCap: 2 },
 };
 
 // アイテム効果の日本語説明(装備画面・ガチャ結果・火力表で共用)
@@ -2521,12 +2638,43 @@ const EQUIP_STAT_DEFS = [
   { key: 'rate',   fmt: (v) => '攻撃速度 +' + Math.round(v * 100) + '%' },
   { key: 'summon', fmt: (v) => '召喚 +' + Math.round(v * 100) + '%' },
   { key: 'graze',  fmt: (v) => '強化ショット倍率 +' + (Math.round(v * 10) / 10) },
+  // --- 部位固有効果(CONFIG.equip.slotFx / EQUIP_FX_KEYS)。系統ごとに部位の役割が違う ---
+  // 龍帝(近距離)
+  { key: 'explode',       fmt: (v) => '命中時 ' + pctStr(v) + 'で範囲爆発' },
+  { key: 'explodeRadius', fmt: (v) => '爆発の半径 +' + pctStr(v) },
+  { key: 'explodeBurn',   fmt: (v) => '爆発が ' + pctStr(v) + 'で燃焼を残す' },
+  { key: 'nearAtk',       fmt: (v) => '至近に敵がいる間 攻撃 +' + pctStr(v) },
+  { key: 'thorns',        fmt: (v) => '接触した敵を押し返し、接触ダメージの ' + pctStr(v) + ' を反射' },
+  { key: 'moveCut',       fmt: (v) => '移動中の接触ダメージ -' + pctStr(v) },
+  { key: 'nearRapid',     fmt: (v) => '至近の敵に当てると短時間 攻撃速度 +' + pctStr(v) },
+  { key: 'grazeBlast',    fmt: (v) => 'グレイズ成立時、周囲に矢の ' + pctStr(v) + ' の爆発' },
+  // 月虹(遠距離)
+  { key: 'farPow',        fmt: (v) => '矢が飛んだ距離で威力アップ(最大 +' + pctStr(v) + ')' },
+  { key: 'farRate',       fmt: (v) => '敵が遠い間 攻撃速度 +' + pctStr(v) },
+  { key: 'bulletCut',     fmt: (v) => '弾・レーザーのダメージ -' + pctStr(v) },
+  { key: 'stopShot',      fmt: (v) => '停止直後の初弾 威力 +' + pctStr(v) },
+  { key: 'farMulti',      fmt: (v) => '遠くの敵に当てると ' + pctStr(v) + 'で次の矢 +1本' },
+  { key: 'grazeRange',    fmt: (v) => 'グレイズ判定半径 +' + pctStr(v) },
+  { key: 'farPierce',     fmt: (v) => '遠距離で当たった矢が貫通 +' + Math.round(v) },
+  // 陽炎(グレイズ)
+  { key: 'chargeShot',    fmt: (v) => '強化ショットの矢が大きくなり貫通 +' + Math.round(v) },
+  { key: 'stopGraze',     fmt: (v) => '構えている間 グレイズ判定半径 +' + pctStr(v) },
+  { key: 'chargeGuard',   fmt: (v) => '被弾時チャージを1つ消費してダメージ -' + pctStr(v) },
+  { key: 'grazeDash',     fmt: (v) => 'グレイズ成立後 短時間 移動速度 +' + pctStr(v) },
+  { key: 'grazeDiag',     fmt: (v) => 'グレイズ成立時 斜めに矢 +' + Math.round(v) + '本' },
+  { key: 'chargeCap',     fmt: (v) => 'チャージ上限 +' + Math.round(v) },
+  { key: 'grazeWave',     fmt: (v) => 'グレイズ成立時、周囲の敵弾をかき消す衝撃波(矢の ' + pctStr(v) + ')' },
 ];
+function pctStr(v) { return Math.round(v * 100) + '%'; }
+// 部位固有効果のキー(すべて加算で 0 = 無し。強化Lvでは伸びない)
+const EQUIP_FX_KEYS = EQUIP_STAT_DEFS.map((s) => s.key)
+  .filter((k) => !['atk', 'hp', 'cut', 'spd', 'rate', 'summon', 'graze'].includes(k));
 
 // Lv 込みの実効値。基礎値 ×(1 + growthPerLv × (Lv-1))
 function itemStatAt(id, key, lv) {
   const base = EQUIP_ITEMS[id][key];
   if (base == null) return 0;
+  if (EQUIP_FX_KEYS.includes(key)) return base;   // 部位固有効果は強化で伸びない(確率・本数が暴れないように)
   return base * (1 + CONFIG.equip.growthPerLv * (lv - 1));
 }
 function itemDesc(id, lv) {
@@ -2594,8 +2742,13 @@ function saveEquip() {
 
 // --- 装備ステータス集計。装備の変更・強化・ロード時だけ再計算する ---
 // recomputeSkillStats() がこの値を焼き込むので、末尾で必ず呼び直す
-let equipStats = { atkMul: 1, rateMul: 1, spdMul: 1, summonMul: 1, grazeFlat: 0, hpBonus: 0, dmgCut: 0 };
-// 効果1件ぶん(装備1つ or 系統ボーナス1段)を集計へ畳み込む。read(key) が値(無ければ0)を返す
+function emptyEquipStats() {
+  const s = { atkMul: 1, rateMul: 1, spdMul: 1, summonMul: 1, grazeFlat: 0, hpBonus: 0, dmgCut: 0 };
+  for (const k of EQUIP_FX_KEYS) s[k] = 0;   // 部位固有効果(0 = 持っていない)
+  return s;
+}
+let equipStats = emptyEquipStats();
+// 効果1件ぶん(装備1つ or 系統ボーナス1段 or 品質1段)を集計へ畳み込む。read(key) が値(無ければ0)を返す
 function foldEquipStats(s, read) {
   s.atkMul    *= 1 + (read('atk') || 0);
   s.rateMul   *= 1 + (read('rate') || 0);
@@ -2604,9 +2757,10 @@ function foldEquipStats(s, read) {
   s.grazeFlat += read('graze') || 0;
   s.hpBonus   += Math.round(read('hp') || 0);
   s.dmgCut    += read('cut') || 0;
+  for (const k of EQUIP_FX_KEYS) s[k] += read(k) || 0;
 }
 function recomputeEquipStats() {
-  const s = { atkMul: 1, rateMul: 1, spdMul: 1, summonMul: 1, grazeFlat: 0, hpBonus: 0, dmgCut: 0 };
+  const s = emptyEquipStats();
   for (const slot in EQUIP_SLOTS) {
     const id = equipSave.equipped[slot];
     if (!id || !equipSave.items[id]) continue;
@@ -2832,7 +2986,7 @@ function recomputeSkillStats() {
     zanshin: n('zanshin') > 0 ? SKILLS.zanshin : null,   // 闘気の構え(チャージ非消費・常時倍率)
     maai: n('maai') > 0 ? SKILLS.maai : null,            // 淀みの間合い(リング内の敵弾減速)
     mirror: n('mirror') > 0 ? SKILLS.mirror : null,      // 明鏡止水(満タンで敵弾減速・損失半減)
-    grazeRange: n('graze_dance') > 0 ? SKILLS.graze_dance.rangeMul : 1,   // グレイズ判定半径の倍率
+    grazeRange: (n('graze_dance') > 0 ? SKILLS.graze_dance.rangeMul : 1) * (1 + equipStats.grazeRange),   // グレイズ判定半径の倍率(月虹お守り込み)
     grazeFlat: n('graze_dance') > 0 ? SKILLS.graze_dance.bonus : 0,       // 強化ショット倍率への加算
     grazeArrow: n('graze_arrow') > 0 ? SKILLS.graze_arrow : null,         // 燕返しの矢(グレイズで反撃)
     homing: n('homing') > 0,          // 矢の追尾
@@ -2927,7 +3081,8 @@ function resetLevel() {
 // スキルを反映した自弾の発射。自弾はすべてここを通るので、攻撃力・貫通は常に一括で乗る。
 // mul はグレイズ強化ショットの倍率(省略時 1)
 const _arrowDir = new THREE.Vector3();
-function fireArrow(origin, dir, angle, speed, baseDamage, mul) {
+// charged はチャージを消費した強化ショットの斉射かどうか(陽炎武器の貫通・大型化が乗る)
+function fireArrow(origin, dir, angle, speed, baseDamage, mul, charged) {
   _arrowDir.copy(dir);
   if (angle) _arrowDir.applyAxisAngle(_axisY, angle);
   // 弦月の構え: 矢のかわりに三日月刃を放つ(攻撃力・強化倍率は同じ経路で乗る)
@@ -2939,6 +3094,12 @@ function fireArrow(origin, dir, angle, speed, baseDamage, mul) {
     b.pierce = level.stats.pierce;
     b.elems = level.stats.arrowElems;   // 矢のエレメント(命中時に applyElems が読む)
     b.mesh.scale.setScalar(level.stats.arrowHitMul);   // 大鏃: 見た目も太る(判定は updateProjectiles 側)
+    // 陽炎武器: 強化ショットの矢が大きくなり貫通する(判定倍率は hitMul で updateProjectiles が読む)
+    if (charged && equipStats.chargeShot > 0) {
+      b.pierce += Math.round(equipStats.chargeShot);
+      b.hitMul = CONFIG.equip.slotFx.chargeShotScale;
+      b.mesh.scale.multiplyScalar(b.hitMul);
+    }
     // 数字を金色・大きめに出す閾値。グレイズ強化は素で2倍からなので従来どおり全部拾い、
     // 獅子の間合いはボーナス域(2倍以上)だけ金にする(遠距離の1.3倍は白のまま)
     b.crit = (mul || 1) >= 2;
@@ -2975,16 +3136,28 @@ function firePlayerShot(origin, dir) {
   const st = level.stats;
   const C = CONFIG.player;
   let mul = 1;
+  let charged = false;                // チャージを使った斉射か(陽炎武器の貫通・大型化)
   if (st.zanshin) {
     // 闘気の構え: チャージは消費せず、積んだ数に応じた常時倍率(満タンで強化ショットと同倍率)
     mul = zanshinMul();
+    charged = graze.charges > 0;
     if (mul >= 2) spawnGrazeFx(origin.x, origin.z, 1.2, 0xffd76a);
   } else if (graze.charges > 0) {
     graze.charges--;
     mul = grazeShotMul();
+    charged = true;
     spawnGrazeFx(origin.x, origin.z, 1.6, 0xffd76a);   // 強化ショットの金色の光
     updateGrazeHud();
   }
+  // 装備の部位固有効果: 龍帝兜 = 至近に敵がいる間の攻撃アップ / 月虹靴 = 停止直後の初弾強化
+  const es = equipStats;
+  const SF = CONFIG.equip.slotFx;
+  if (es.nearAtk > 0) {
+    const t = nearestEnemy();
+    if (t && t.mesh.position.distanceTo(player.mesh.position) <= SF.nearDist) mul *= 1 + es.nearAtk;
+  }
+  if (es.stopShot > 0 && player.firstShot) mul *= 1 + es.stopShot;
+  player.firstShot = false;
   // 獅子の間合い: 狙った敵との距離で斉射全体の倍率が変わる(近いほど強い)。
   // 発射は最寄りの敵を向いた瞬間なので、距離も最寄りの敵から取れば狙いと一致する。
   // グレイズ強化とは乗算(バック/サイドショット含む全弾に一括で乗る)
@@ -3003,14 +3176,16 @@ function firePlayerShot(origin, dir) {
     origin.x + dir.x * 0.8, origin.y + 0.1, origin.z + dir.z * 0.8,
     CONFIG.fx.muzzle.size * (mul >= 2 ? 1.5 : 1), mul >= 2 ? 0xffd76a : 0xffffff
   );
-  const count = 1 + st.multishot;
+  // 月虹指輪: 遠くの敵に当てた次の斉射は正面の矢が1本増える(積んだ分をここで使い切る)
+  const count = 1 + st.multishot + player.bonusArrows;
+  player.bonusArrows = 0;
   for (let i = 0; i < count; i++) {
-    fireArrow(origin, dir, (i - (count - 1) / 2) * CONFIG.level.spread, C.arrowSpeed, C.arrowDamage, mul);
+    fireArrow(origin, dir, (i - (count - 1) / 2) * CONFIG.level.spread, C.arrowSpeed, C.arrowDamage, mul, charged);
   }
-  if (st.back) fireArrow(origin, dir, Math.PI, C.arrowSpeed, C.arrowDamage, mul);
+  if (st.back) fireArrow(origin, dir, Math.PI, C.arrowSpeed, C.arrowDamage, mul, charged);
   if (st.side) {
-    fireArrow(origin, dir, Math.PI / 2, C.arrowSpeed, C.arrowDamage, mul);
-    fireArrow(origin, dir, -Math.PI / 2, C.arrowSpeed, C.arrowDamage, mul);
+    fireArrow(origin, dir, Math.PI / 2, C.arrowSpeed, C.arrowDamage, mul, charged);
+    fireArrow(origin, dir, -Math.PI / 2, C.arrowSpeed, C.arrowDamage, mul, charged);
   }
   onPlayerAttackArts();               // 攻撃時トリガーの星・霊剣
 }
@@ -3845,8 +4020,8 @@ function updateLaser(enemy, dt) {
     const d = laserDistance(enemy, pp.x, pp.z);
     const half = L.beamWidth / 2;
     if (d < half + CONFIG.player.radius) {
-      damagePlayer(L.damage);
-    } else if (!enemy.laserGrazed && d < half + CONFIG.graze.outerRadius * level.stats.grazeRange) {
+      damagePlayer(L.damage, enemy, 'laser');
+    } else if (!enemy.laserGrazed && d < half + CONFIG.graze.outerRadius * grazeRangeMul()) {
       enemy.laserGrazed = true;                                 // 1本のレーザーにつき1回だけ
       onGraze(enemy);
     }
@@ -4172,6 +4347,7 @@ function updateEnemy(enemy, dt) {
 
   // --- 移動 ---
   let moveVec = null;
+  if (enemy.thornsCd > 0) enemy.thornsCd -= dt;   // 龍帝鎧の反射の再発動間隔
   if (def.behavior === 'chase') {
     moveVec = toPlayer;
   } else if (def.behavior === 'shoot') {
@@ -4225,7 +4401,21 @@ function updateEnemy(enemy, dt) {
 
   // --- 接触ダメージ ---
   if (dist < def.radius + CONFIG.player.radius) {
-    damagePlayer(def.touchDamage);
+    damagePlayer(def.touchDamage, enemy, 'contact');
+    // 龍帝鎧: 接触した敵を押し返し、接触ダメージの thorns 倍を反射する(張り付き対策)。
+    // 被弾判定とは独立(無敵中でも押す)。同じ敵には thornsCd 秒に1回。ボスは押されない
+    if (equipStats.thorns > 0 && !(enemy.thornsCd > 0)) {
+      const SF = CONFIG.equip.slotFx;
+      enemy.thornsCd = SF.thornsCd;
+      if (def.behavior !== 'boss') {
+        const ep = enemy.mesh.position;
+        _knock.subVectors(ep, player.mesh.position).setY(0).normalize().multiplyScalar(SF.thornsKnockback);
+        const h = CONFIG.arena.half - def.radius;
+        ep.x = clamp(ep.x + _knock.x, -h, h);
+        ep.z = clamp(ep.z + _knock.z, -h, h);
+      }
+      damageEnemy(enemy, def.touchDamage * equipStats.thorns, 'dot');
+    }
   }
 }
 
@@ -4411,8 +4601,20 @@ function updatePlayer(dt) {
   player.moving = moving;
   const pos = player.mesh.position;
 
+  // 装備の部位固有効果のタイマー(龍帝指輪の連射 / 陽炎靴の加速 / グレイズ由来の矢・爆発・衝撃波の間隔)
+  if (player.rapidT > 0) player.rapidT -= dt;
+  if (player.dashT > 0) player.dashT -= dt;
+  if (graze.diagCd > 0) graze.diagCd -= dt;
+  if (graze.blastCd > 0) graze.blastCd -= dt;
+  if (graze.waveCd > 0) graze.waveCd -= dt;
+  // 月虹靴: 「動いていた → 止まった」の瞬間を覚えて、次の1発を初弾扱いにする
+  if (player.wasMoving && !moving) player.firstShot = true;
+  player.wasMoving = moving;
+
   if (moving) {
-    const speed = CONFIG.player.speed * level.stats.speedMul;
+    // 陽炎靴: グレイズ成立後の短い加速
+    const dash = player.dashT > 0 ? 1 + equipStats.grazeDash : 1;
+    const speed = CONFIG.player.speed * level.stats.speedMul * dash;
     pos.x += input.x * speed * dt;
     pos.z += input.z * speed * dt;
     const h = CONFIG.arena.half - CONFIG.player.radius;
@@ -4429,7 +4631,15 @@ function updatePlayer(dt) {
     if (target) {
       player.mesh.lookAt(target.mesh.position.x, 0, target.mesh.position.z);
       // ラピッドショットは攻撃速度アップ
-      const interval = CONFIG.player.fireInterval / level.stats.fireMul;
+      let interval = CONFIG.player.fireInterval / level.stats.fireMul;
+      // 装備の部位固有効果: 月虹兜 = 敵が遠い間の攻速アップ / 龍帝指輪 = 至近ヒット後の短い連射アップ
+      {
+        const es = equipStats;
+        let bonus = 0;
+        if (es.farRate > 0 && target.mesh.position.distanceTo(pos) >= CONFIG.equip.slotFx.farDist) bonus += es.farRate;
+        if (es.nearRapid > 0 && player.rapidT > 0) bonus += es.nearRapid;
+        if (bonus > 0) interval /= 1 + bonus;
+      }
       player.fireTimer -= dt;
       if (player.fireTimer <= 0) {
         player.fireTimer = interval;
@@ -4509,15 +4719,31 @@ function updateProjectiles(dt) {
       // damageEnemy が removeEnemy(splice)を呼ぶので、敵は後ろから回す
       for (let ei = enemies.length - 1; ei >= 0; ei--) {
         const e = enemies[ei];
-        const r = e.def.radius + 0.25 * (pool === arrowPool ? st.arrowHitMul : 1);   // 大鏃で太る
+        const r = e.def.radius + 0.25 * (pool === arrowPool ? st.arrowHitMul * b.hitMul : 1);   // 大鏃・強化ショットで太る
         if (p.distanceToSquared(e.mesh.position.clone().setY(p.y)) >= r * r) continue;
         if (b.hits && b.hits.has(e)) continue;   // 貫通した敵に次のフレームで多重ヒットしない
+        // 装備の部位固有効果(矢だけ): 飛んだ距離で威力・貫通・連射・追加矢が決まる(龍帝/月虹)
+        let dmg = b.damage;
+        if (pool === arrowPool) {
+          const es = equipStats;
+          const SF = CONFIG.equip.slotFx;
+          const flew = b.origin.distanceTo(p);
+          if (es.farPow > 0) dmg *= farPowMul(flew);                                           // 月虹武器
+          if (es.farPierce > 0 && !b.farPierced && flew >= SF.farDist) { b.farPierced = true; b.pierce += Math.round(es.farPierce); }   // 月虹6部位
+          if (es.nearRapid > 0 && flew <= SF.nearDist) player.rapidT = SF.nearRapidDur;         // 龍帝指輪
+          if (es.farMulti > 0 && flew >= SF.farDist && Math.random() < es.farMulti) player.bonusArrows = 1;   // 月虹指輪
+        }
         // 属性を先に付与する(とどめの一撃でも雷の連鎖は起きる)。
         // 連鎖がこの敵自身を倒すことはない(chainLightning は当てた敵を除く)が、
         // 巻き添えで敵配列が縮むことはあるので damageEnemy 側の生存確認に hpBar を使う
-        applyElems(e, b.damage, b.elems);
-        if (e.hpBar) damageEnemy(e, b.damage, b.crit ? 'crit' : undefined);
+        applyElems(e, dmg, b.elems);
+        if (e.hpBar) damageEnemy(e, dmg, b.crit ? 'crit' : undefined);
         if (e.hpBar) arts.lastHit = e;           // 追い打ちの剣: 最後に当てた敵を覚える
+        // 龍帝武器: 命中時に確率で範囲爆発(当てた敵にも乗る。6部位なら燃焼も残す)
+        if (pool === arrowPool && equipStats.explode > 0 && Math.random() < equipStats.explode) {
+          const SF = CONFIG.equip.slotFx;
+          equipBlast(p.x, p.z, SF.explodeRadius * (1 + equipStats.explodeRadius), b.damage * SF.explodeRatio, equipStats.explodeBurn);
+        }
         // 残響の鏃: 矢のヒットは一拍おいてもう一度響く(敵側に積んで updateEnemy が鳴らす)
         if (st.echo && pool === arrowPool && e.hpBar) {
           e.echoT = st.echo.delay;
@@ -4541,7 +4767,7 @@ function updateProjectiles(dt) {
   // 敵弾 → プレイヤー(被弾判定とグレイズ判定を同じループで見る)
   const pr = CONFIG.player.radius + 0.22;
   const gzIn = CONFIG.graze.innerRadius * CONFIG.graze.innerRadius;
-  const gzR = CONFIG.graze.outerRadius * st.grazeRange;   // 弾幕遊戯で広がる
+  const gzR = CONFIG.graze.outerRadius * grazeRangeMul();   // 弾幕遊戯・装備(月虹お守り・陽炎兜)で広がる
   const gzOut = gzR * gzR;
   const pp = player.mesh.position;
   // 明鏡止水: チャージ満タンの間、すべての敵弾が遅くなる
@@ -4562,7 +4788,7 @@ function updateProjectiles(dt) {
     const d2 = dx * dx + dz * dz;
     if (d2 < pr * pr) {
       deactivate(b);
-      damagePlayer(b.damage);
+      damagePlayer(b.damage, b.owner, 'bullet');
       continue;
     }
     // グレイズ: 至近まで寄って(near)、当たらずに抜けた瞬間に成立。
@@ -5084,6 +5310,11 @@ function renderDbgPower() {
     r += row('合算', '攻 ×' + fmt(equipStats.atkMul) + ' / 攻速 ×' + fmt(equipStats.rateMul) + ' / 移動 ×' + fmt(equipStats.spdMul),
       '召喚 ×' + fmt(equipStats.summonMul) + ' / HP +' + equipStats.hpBonus +
       ' / 被ダメ -' + pct(equipStats.dmgCut) + ' / 強化ショット +' + fmt(equipStats.grazeFlat));
+    // 部位固有効果(装備・系統ボーナスから集まった0以外のキーを全部並べる)
+    const fx = EQUIP_STAT_DEFS.filter((s) => EQUIP_FX_KEYS.includes(s.key) && equipStats[s.key] > 0)
+      .map((s) => s.fmt(equipStats[s.key]));
+    r += row('部位固有', fx.length ? fx.join(' / ') : NA,
+      '近距離 ' + CONFIG.equip.slotFx.nearDist + ' / 遠距離 ' + CONFIG.equip.slotFx.farDist + ' を境に判定');
     html += sec('⚔️ 装備(下の各倍率に焼き込み済み)', r);
   }
 

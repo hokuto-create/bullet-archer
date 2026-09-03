@@ -158,9 +158,10 @@ GitHub Pages で公開する前提の、ビルド不要な単一 `index.html` �
   - **装備系統(シリーズ)**(定義は `EQUIP_SERIES`。データ駆動で、系統を増やすときは
     `EQUIP_SERIES` にエントリ+`EQUIP_ITEMS` に `series` 付きの6部位を足す): 6部位フルセットの
     テーマ装備で、同系統を 2/4/6 部位そろえて装備すると系統ボーナスが累積で発動する。
-    S級装備3系統 = 龍帝(攻撃特化)/ 鳳凰(生存特化)/ 月虹(召喚・グレイズ特化)、
-    通常装備3系統は対になるS級系統の**完全下位互換** = 狩人⊂龍帝(common)/ 銀狼⊂鳳凰(rare)/
-    星詠⊂月虹(epic)。部位ごとの効果キーもボーナス段の効果キーもS級側と同一で数値だけすべて下
+    S級装備3系統はアーチャー伝説の「近距離用/遠距離用/汎用」の流儀で**プレイスタイル**が違う
+    = 龍帝(近距離)/ 月虹(遠距離)/ 陽炎(グレイズ)。
+    通常装備3系統は対になるS級系統の**完全下位互換** = 狩人⊂龍帝(common)/ 星詠⊂月虹(epic)/
+    銀狼⊂陽炎(rare)。部位ごとの効果キーもボーナス段の効果キーもS級側と同一で数値だけすべて下
     (通常セットの上位を引いたらそのまま置き換えられる導線)。
     ボーナスの効果キーはアイテムと同じで強化Lvでは伸びない固定値。集計は
     `countEquippedSeries()` → `recomputeEquipStats()` 内の `foldEquipStats()`(装備1つと
@@ -174,6 +175,28 @@ GitHub Pages で公開する前提の、ビルド不要な単一 `index.html` �
     下位の品質を必ず包含するので、「通常⊂S級」の下位互換関係もそのまま保たれる。
     値は強化Lvでは伸びない固定値で、集計は `recomputeEquipStats()` が装備・系統ボーナスと
     同じ `foldEquipStats()` で畳み込む。装備一覧の行に「品質」行として段ごとのレア度色で表示
+  - **部位固有効果**(土台の数値は `CONFIG.equip.slotFx`、効果キーは `EQUIP_FX_KEYS` =
+    `EQUIP_STAT_DEFS` のうち基礎7ステータス以外。すべて加算で 0 = 無し、**強化Lvでは伸びない**
+    (`itemStatAt()`)): 系統アイテムは基礎ステータスに加えて部位の役割に沿った固有効果を1つ持つ。
+    部位の役割は全系統で固定 = 武器:矢の性質 / 兜:構え中 / 鎧:被弾・接触 / 靴:移動 / 指輪:連射 / お守り:グレイズ。
+    - 龍帝(近距離): 武器 `explode` 命中時に範囲爆発(`equipBlast()`)/ 兜 `nearAtk` 至近(`nearDist`)に敵がいる間
+      攻撃+(`firePlayerShot()`)/ 鎧 `thorns` 接触した敵をノックバック+反射(接触ダメージ分岐。ボスは押さない、
+      `enemy.thornsCd`)/ 靴 `moveCut` 移動中の接触ダメ軽減 / 指輪 `nearRapid` 至近ヒット後の短時間連射
+      (`player.rapidT`)/ お守り `grazeBlast` グレイズ成立時の爆発。系統: 2 爆発半径 → 4 反射 → 6 `explodeBurn` 爆発が燃焼を残す
+    - 月虹(遠距離): 武器 `farPow` 飛んだ距離で威力(`farPowMul()`。矢に `origin` を持たせた)/ 兜 `farRate`
+      敵が遠い(`farDist`)間の攻速 / 鎧 `bulletCut` 弾・レーザーだけ軽減(`damagePlayer(amount, src, kind)` の
+      `kind`)/ 靴 `stopShot` 停止直後の初弾強化(`player.wasMoving`→`firstShot`)/ 指輪 `farMulti` 遠距離ヒットで
+      次の斉射の矢+1(`player.bonusArrows`)/ お守り `grazeRange` 判定半径。系統: 2 威力 → 4 攻速 → 6 `farPierce` 遠距離ヒットで貫通
+    - 陽炎(グレイズ): 武器 `chargeShot` 強化ショットの矢が大型化+貫通(`fireArrow()` の第7引数 `charged`、
+      判定は `b.hitMul`)/ 兜 `stopGraze` 構えている間の判定半径(`grazeRangeMul()`。動的なので stats に焼き込まない)/
+      鎧 `chargeGuard` 被弾時チャージ1消費でダメージ軽減 / 靴 `grazeDash` グレイズ後の加速(`player.dashT`)/
+      指輪 `grazeDiag` グレイズ成立時に射線から±45°へ斜め矢(`fireDiagArrows()`。アーチャー伝説のダイアゴナルアロー)/
+      お守り `chargeCap` チャージ上限+(`grazeChargeCap()`)。系統: 2 強化ショット倍率 → 4 チャージ防御 → 6 `grazeWave`
+      グレイズ成立時に周囲の敵弾をかき消す衝撃波(`eclipseEat` + `equipBlast`)
+    - グレイズ成立トリガーは `onGraze()` 末尾にまとめてある。月蝕・衝撃波は1発ごとに `onGraze` を呼ぶので、
+      斜め矢・爆発・衝撃波は `graze.diagCd/blastCd/waveCd`(`slotFx` の間隔)で頭打ちにして連鎖暴走を止める
+    - 「至近/遠距離」は `slotFx.nearDist`/`farDist` を全系統で共有。矢側の判定は「飛んだ距離」(`b.origin` からの距離)で、
+      発射側の判定は最寄りの敵との距離で取る
   - 入手はガチャ(コイン 1回100 / 10連900)。コインは通常ウェーブクリア +10 / ボスウェーブ +40 /
     チャプタークリア +`chapters[].coinBonus`。**付与(`addCoins()`)のたび即セーブ**するので
     ゲームオーバーでもラン中の獲得分は残る(`state.runCoins` はリザルト表示用の集計)
