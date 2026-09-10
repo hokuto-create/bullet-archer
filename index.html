@@ -152,7 +152,7 @@
   /* エピック以上は枠を淡く明滅させて「引き」の強さを見せる。
      animation はショートハンドで card-in を上書きしてしまうため、
      出現アニメもここに並記する(delay も2本ぶん指定) */
-  .rarity-epic, .rarity-legendary, .rarity-sclass {
+  .rarity-epic, .rarity-legendary, .rarity-mythic {
     animation: card-in 0.45s cubic-bezier(0.34, 1.56, 0.64, 1) backwards,
                rarity-glow 1.2s ease-in-out infinite;
     animation-delay: var(--in-delay, 0s), var(--in-delay, 0s);
@@ -571,7 +571,7 @@
     animation: card-in 0.45s cubic-bezier(0.34, 1.56, 0.64, 1) backwards;
     animation-delay: var(--in-delay, 0s);
   }
-  .g-card.rarity-epic, .g-card.rarity-legendary, .g-card.rarity-sclass {
+  .g-card.rarity-epic, .g-card.rarity-legendary, .g-card.rarity-mythic {
     animation: card-in 0.45s cubic-bezier(0.34, 1.56, 0.64, 1) backwards,
                rarity-glow 1.2s ease-in-out infinite;
     animation-delay: var(--in-delay, 0s), var(--in-delay, 0s);
@@ -888,26 +888,26 @@ const CONFIG = {
       rare:      { weight: 3, label: 'レア',           color: '#4da3ff' },
       epic:      { weight: 2, label: 'エピック',       color: '#c76bff' },
       legendary: { weight: 1, label: 'レジェンダリー', color: '#ffb64d' },
-      // S級は装備専用の最上位段(スキルには使わない)。weight 0 なのでスキル抽選には
+      // ミシックは装備専用の最上位段(スキルには使わない)。weight 0 なのでスキル抽選には
       // 一切出ず、ガチャの排出率は CONFIG.equip.gacha.weights 側で別に持つ
-      sclass:    { weight: 0, label: 'S級',           color: '#ff5d6e' },
+      mythic:    { weight: 0, label: 'ミシック',       color: '#ff5d6e' },
     },
   },
   // 装備システム(6部位)。ラン外のメタ進行: ガチャで入手 → 強化 → 装備してランに挑む。
   // アイテム定義は EQUIP_ITEMS(データ駆動)、所持・装備状況は localStorage に保存
   equip: {
     growthPerLv: 0.2,               // 強化1Lvごとに基礎値の20%ずつ伸びる(Lv5で基礎の1.8倍)
-    lvCap:     { common: 5, rare: 7, epic: 9, legendary: 10, sclass: 12 },   // レアリティ別の強化上限Lv
+    lvCap:     { common: 5, rare: 7, epic: 9, legendary: 10, mythic: 12 },   // レアリティ別の強化上限Lv
     // 強化コスト: Lv n → n+1 は「その装備の素材 matPerLv 個 + コイン coinPerLv × n」。
     // 高レアほど被り(=素材)が出にくいぶん素材要求は軽くし、かわりにコインを重くする
-    matPerLv:  { common: 3, rare: 2, epic: 1, legendary: 1, sclass: 1 },
-    coinPerLv: { common: 40, rare: 80, epic: 160, legendary: 320, sclass: 640 },
-    // ガチャ被り1回で得る素材数(S級は排出が渋いぶん被り1回の価値を上げる)
-    dupeMat:   { common: 1, rare: 1, epic: 1, legendary: 1, sclass: 2 },
+    matPerLv:  { common: 3, rare: 2, epic: 1, legendary: 1, mythic: 1 },
+    coinPerLv: { common: 40, rare: 80, epic: 160, legendary: 320, mythic: 640 },
+    // ガチャ被り1回で得る素材数(ミシックは排出が渋いぶん被り1回の価値を上げる)
+    dupeMat:   { common: 1, rare: 1, epic: 1, legendary: 1, mythic: 2 },
     gacha: {
       cost1: 100, cost10: 900,      // 1回 / 10連(1割引)のコイン
       // ガチャのレアリティ重み(スキル抽選の 4/3/2/1 より尖らせる。色・ラベルは level.rarity を共用)
-      weights: { common: 54, rare: 30, epic: 12, legendary: 3, sclass: 1 },
+      weights: { common: 54, rare: 30, epic: 12, legendary: 3, mythic: 1 },
     },
     rewards: { wave: 10, boss: 40 },  // 通常ウェーブ / ボスウェーブのクリアで得るコイン
     // 部位固有効果の土台。系統(近距離=龍帝 / 遠距離=月虹 / グレイズ=陽炎)ごとに部位の役割が
@@ -2471,7 +2471,10 @@ const EQUIP_SLOTS = {
 // **固有効果はエピックで初めて発動する**(コモン・レアの段は 0。狩人・銀狼は基礎ステータス+系統ボーナスだけ)。
 // 通常系統は fxOf で対になるS級系統の梯子をそのまま使い、自分のレア度の段で止まる
 // = 「通常⊂S級」が構造として保証される(値は S級側にだけ書く)
-const EQUIP_FX_TIERS = ['common', 'rare', 'epic', 'legendary', 'sclass'];
+const EQUIP_FX_TIERS = ['common', 'rare', 'epic', 'legendary', 'mythic'];
+// 「S級」はレア度ではなく系統の格: 龍帝/月虹/陽炎(fxOf を持たない系統)のアイテムが S級装備。
+// タイルと詳細の金の S バッジはこれで判定する(レア度の最上位は「ミシック」)
+function isSClassItem(item) { return !!item.series && !EQUIP_SERIES[item.series].fxOf; }
 const EQUIP_SERIES = {
   // --- 通常装備3系統(S級の下位版。fx は fxOf の系統から借りる) ---
   hunt:   { label: '狩人', rarity: 'common', fxOf: 'ryu',    bonuses: [
@@ -2481,9 +2484,9 @@ const EQUIP_SERIES = {
   wolf:   { label: '銀狼', rarity: 'rare',   fxOf: 'kagero', bonuses: [
     { need: 2, graze: 0.15 }, { need: 4, chargeGuard: 0.1 }, { need: 6, grazeWave: 0.5 }] },
   // --- S級装備3系統 ---
-  ryu:    { label: '龍帝', rarity: 'sclass', bonuses: [   // 近距離
+  ryu:    { label: '龍帝', rarity: 'mythic', bonuses: [   // 近距離
     { need: 2, explodeRadius: 0.3 }, { need: 4, thorns: 0.5 }, { need: 6, explodeBurn: 1.0 }],
-    fx: {                              //          コモン  レア  エピ  レジェ  S級   (累計)
+    fx: {                              //          コモン  レア  エピ  レジェ  ミシック (累計)
       weapon: { key: 'explode',    tiers: [0, 0, 0.25, 0.10, 0.15] },   // 爆発率 エピ.25/レジェ.35/S.50
       helmet: { key: 'nearAtk',    tiers: [0, 0, 0.12, 0.05, 0.08] },   // 至近攻撃 .12/.17/.25
       armor:  { key: 'thorns',     tiers: [0, 0, 0.50, 0.20, 0.30] },   // 反射 .50/.70/1.0
@@ -2491,7 +2494,7 @@ const EQUIP_SERIES = {
       ring:   { key: 'nearRapid',  tiers: [0, 0, 0.20, 0.08, 0.12] },   // 至近連射 .20/.28/.40
       amulet: { key: 'grazeBlast', tiers: [0, 0, 0.40, 0.15, 0.25] },   // グレイズ爆発 .40/.55/.80
     } },
-  gekko:  { label: '月虹', rarity: 'sclass', bonuses: [   // 遠距離
+  gekko:  { label: '月虹', rarity: 'mythic', bonuses: [   // 遠距離
     { need: 2, farPow: 0.2 }, { need: 4, farRate: 0.15 }, { need: 6, farPierce: 2 }],
     fx: {
       weapon: { key: 'farPow',     tiers: [0, 0, 0.25, 0.10, 0.15] },   // 飛距離威力 .25/.35/.50
@@ -2501,15 +2504,15 @@ const EQUIP_SERIES = {
       ring:   { key: 'farMulti',   tiers: [0, 0, 0.50, 0.20, 0.30] },   // 追加矢率 .50/.70/1.0
       amulet: { key: 'grazeRange', tiers: [0, 0, 0.15, 0.05, 0.10] },   // 判定半径 .15/.20/.30
     } },
-  kagero: { label: '陽炎', rarity: 'sclass', bonuses: [   // グレイズ
+  kagero: { label: '陽炎', rarity: 'mythic', bonuses: [   // グレイズ
     { need: 2, graze: 0.3 }, { need: 4, chargeGuard: 0.25 }, { need: 6, grazeWave: 1.0 }],
     fx: {
-      weapon: { key: 'chargeShot',  tiers: [0, 0, 1, 0, 1] },                 // 強化ショット貫通 エピ1 → S級2
+      weapon: { key: 'chargeShot',  tiers: [0, 0, 1, 0, 1] },                 // 強化ショット貫通 エピ1 → ミシック2
       helmet: { key: 'stopGraze',   tiers: [0, 0, 0.20, 0.08, 0.12] },  // 構え中の判定半径 .20/.28/.40
       armor:  { key: 'chargeGuard', tiers: [0, 0, 0.25, 0.10, 0.15] },  // チャージ防御 .25/.35/.50
       boots:  { key: 'grazeDash',   tiers: [0, 0, 0.20, 0.08, 0.12] },  // 加速 .20/.28/.40
-      ring:   { key: 'grazeDiag',   tiers: [0, 0, 1, 0, 1] },                 // 斜め矢 エピ1本 → S級2本
-      amulet: { key: 'chargeCap',   tiers: [0, 0, 1, 0, 1] },                 // 上限 エピ+1 → S級+2
+      ring:   { key: 'grazeDiag',   tiers: [0, 0, 1, 0, 1] },                 // 斜め矢 エピ1本 → ミシック2本
+      amulet: { key: 'chargeCap',   tiers: [0, 0, 1, 0, 1] },                 // 上限 エピ+1 → ミシック+2
     } },
 };
 
@@ -2524,46 +2527,46 @@ const EQUIP_QUALITY = {
     { rarity: 'rare',      rate: 0.03 },
     { rarity: 'epic',      atk: 0.05 },
     { rarity: 'legendary', graze: 0.1 },
-    { rarity: 'sclass',    atk: 0.10 },
+    { rarity: 'mythic',    atk: 0.10 },
   ],
   helmet: [
     { rarity: 'common',    hp: 5 },
     { rarity: 'rare',      hp: 8 },
     { rarity: 'epic',      cut: 0.02 },
     { rarity: 'legendary', hp: 15 },
-    { rarity: 'sclass',    hp: 25 },
+    { rarity: 'mythic',    hp: 25 },
   ],
   armor: [
     { rarity: 'common',    hp: 5 },
     { rarity: 'rare',      cut: 0.02 },
     { rarity: 'epic',      hp: 10 },
     { rarity: 'legendary', cut: 0.04 },
-    { rarity: 'sclass',    cut: 0.06, hp: 15 },
+    { rarity: 'mythic',    cut: 0.06, hp: 15 },
   ],
   boots: [
     { rarity: 'common',    spd: 0.02 },
     { rarity: 'rare',      spd: 0.03 },
     { rarity: 'epic',      hp: 8 },
     { rarity: 'legendary', spd: 0.05 },
-    { rarity: 'sclass',    spd: 0.08 },
+    { rarity: 'mythic',    spd: 0.08 },
   ],
   ring: [
     { rarity: 'common',    rate: 0.02 },
     { rarity: 'rare',      atk: 0.02 },
     { rarity: 'epic',      rate: 0.04 },
     { rarity: 'legendary', rate: 0.06 },
-    { rarity: 'sclass',    rate: 0.08, atk: 0.04 },
+    { rarity: 'mythic',    rate: 0.08, atk: 0.04 },
   ],
   amulet: [
     { rarity: 'common',    summon: 0.03 },
     { rarity: 'rare',      summon: 0.04 },
     { rarity: 'epic',      graze: 0.1 },
     { rarity: 'legendary', summon: 0.08 },
-    { rarity: 'sclass',    summon: 0.12, graze: 0.1 },
+    { rarity: 'mythic',    summon: 0.12, graze: 0.1 },
   ],
 };
 
-// レア度の序列(CONFIG.level.rarity の定義順 = common < rare < epic < legendary < sclass)
+// レア度の序列(CONFIG.level.rarity の定義順 = common < rare < epic < legendary < mythic)
 function rarityIndex(r) { return Object.keys(CONFIG.level.rarity).indexOf(r); }
 // そのアイテムに乗っている品質ボーナス段(自分のレア度以下の全段)
 function qualityBonuses(id) {
@@ -2631,7 +2634,7 @@ const EQUIP_ITEMS = {
 
   // ===== 系統装備(EQUIP_SERIES 参照)。series を持つアイテムはそろえると系統ボーナス =====
   // 基礎値は単品だと同レアリティの無系統品と同格〜わずかに下で、セットボーナスぶんで上回る設計。
-  // S級は legendary の約1.3〜1.4倍の基礎値+副ステータス持ち。
+  // ミシック(S級系統)は legendary の約1.3〜1.4倍の基礎値。
   // 通常3系統は対になる S級系統の完全下位互換: 部位ごとの効果キーを S級側と同一にし、
   // 数値だけすべて下げてある(EQUIP_SERIES のコメント参照)
   // 系統アイテムの部位固有効果は EQUIP_SERIES[].fx の梯子で持つ(qualityBonuses が展開)。
@@ -2658,26 +2661,26 @@ const EQUIP_ITEMS = {
   wolf_ring:    { slot: 'ring',   icon: '🌘', name: '銀狼の月牙輪',   rarity: 'rare', series: 'wolf', rate: 0.08 },
   wolf_charm:   { slot: 'amulet', icon: '🎐', name: '銀狼の遠吠え笛', rarity: 'rare', series: 'wolf', summon: 0.10 },
   // --- S級: 龍帝系統(近距離) ---
-  ryu_bow:      { slot: 'weapon', icon: '🐉', name: '龍帝の焔弓',     rarity: 'sclass', series: 'ryu', atk: 0.30 },
-  ryu_helm:     { slot: 'helmet', icon: '🐲', name: '龍帝の角冑',     rarity: 'sclass', series: 'ryu', hp: 60 },
-  ryu_mail:     { slot: 'armor',  icon: '🔥', name: '龍帝の緋鱗鎧',   rarity: 'sclass', series: 'ryu', cut: 0.16 },
-  ryu_boots:    { slot: 'boots',  icon: '🌋', name: '龍帝の焔脚',     rarity: 'sclass', series: 'ryu', spd: 0.20 },
-  ryu_ring:     { slot: 'ring',   icon: '🔱', name: '龍帝の焔環',     rarity: 'sclass', series: 'ryu', rate: 0.22 },
-  ryu_charm:    { slot: 'amulet', icon: '🎴', name: '龍帝の逆鱗',     rarity: 'sclass', series: 'ryu', summon: 0.16 },
+  ryu_bow:      { slot: 'weapon', icon: '🐉', name: '龍帝の焔弓',     rarity: 'mythic', series: 'ryu', atk: 0.30 },
+  ryu_helm:     { slot: 'helmet', icon: '🐲', name: '龍帝の角冑',     rarity: 'mythic', series: 'ryu', hp: 60 },
+  ryu_mail:     { slot: 'armor',  icon: '🔥', name: '龍帝の緋鱗鎧',   rarity: 'mythic', series: 'ryu', cut: 0.16 },
+  ryu_boots:    { slot: 'boots',  icon: '🌋', name: '龍帝の焔脚',     rarity: 'mythic', series: 'ryu', spd: 0.20 },
+  ryu_ring:     { slot: 'ring',   icon: '🔱', name: '龍帝の焔環',     rarity: 'mythic', series: 'ryu', rate: 0.22 },
+  ryu_charm:    { slot: 'amulet', icon: '🎴', name: '龍帝の逆鱗',     rarity: 'mythic', series: 'ryu', summon: 0.16 },
   // --- S級: 月虹系統(遠距離) ---
-  gekko_bow:    { slot: 'weapon', icon: '🌈', name: '月虹の霊弓',     rarity: 'sclass', series: 'gekko', atk: 0.26 },
-  gekko_helm:   { slot: 'helmet', icon: '🌙', name: '月虹の月冠',     rarity: 'sclass', series: 'gekko', hp: 60 },
-  gekko_mail:   { slot: 'armor',  icon: '🌌', name: '月虹の夜羽衣',   rarity: 'sclass', series: 'gekko', cut: 0.16 },
-  gekko_boots:  { slot: 'boots',  icon: '🌠', name: '月虹の星渡り',   rarity: 'sclass', series: 'gekko', spd: 0.24 },
-  gekko_ring:   { slot: 'ring',   icon: '💠', name: '月虹の指環',     rarity: 'sclass', series: 'gekko', rate: 0.22 },
-  gekko_charm:  { slot: 'amulet', icon: '🔮', name: '月虹の雫',       rarity: 'sclass', series: 'gekko', summon: 0.22 },
+  gekko_bow:    { slot: 'weapon', icon: '🌈', name: '月虹の霊弓',     rarity: 'mythic', series: 'gekko', atk: 0.26 },
+  gekko_helm:   { slot: 'helmet', icon: '🌙', name: '月虹の月冠',     rarity: 'mythic', series: 'gekko', hp: 60 },
+  gekko_mail:   { slot: 'armor',  icon: '🌌', name: '月虹の夜羽衣',   rarity: 'mythic', series: 'gekko', cut: 0.16 },
+  gekko_boots:  { slot: 'boots',  icon: '🌠', name: '月虹の星渡り',   rarity: 'mythic', series: 'gekko', spd: 0.24 },
+  gekko_ring:   { slot: 'ring',   icon: '💠', name: '月虹の指環',     rarity: 'mythic', series: 'gekko', rate: 0.22 },
+  gekko_charm:  { slot: 'amulet', icon: '🔮', name: '月虹の雫',       rarity: 'mythic', series: 'gekko', summon: 0.22 },
   // --- S級: 陽炎系統(グレイズ) ---
-  kagero_bow:   { slot: 'weapon', icon: '🌫️', name: '陽炎の霞弓',     rarity: 'sclass', series: 'kagero', atk: 0.26 },
-  kagero_helm:  { slot: 'helmet', icon: '🦋', name: '陽炎の蝶冠',     rarity: 'sclass', series: 'kagero', hp: 60 },
-  kagero_mail:  { slot: 'armor',  icon: '🍃', name: '陽炎の薄衣',     rarity: 'sclass', series: 'kagero', cut: 0.16 },
-  kagero_boots: { slot: 'boots',  icon: '💫', name: '陽炎の残影靴',   rarity: 'sclass', series: 'kagero', spd: 0.24 },
-  kagero_ring:  { slot: 'ring',   icon: '🪞', name: '陽炎の鏡環',     rarity: 'sclass', series: 'kagero', rate: 0.22 },
-  kagero_charm: { slot: 'amulet', icon: '🫧', name: '陽炎の泡珠',     rarity: 'sclass', series: 'kagero', summon: 0.18 },
+  kagero_bow:   { slot: 'weapon', icon: '🌫️', name: '陽炎の霞弓',     rarity: 'mythic', series: 'kagero', atk: 0.26 },
+  kagero_helm:  { slot: 'helmet', icon: '🦋', name: '陽炎の蝶冠',     rarity: 'mythic', series: 'kagero', hp: 60 },
+  kagero_mail:  { slot: 'armor',  icon: '🍃', name: '陽炎の薄衣',     rarity: 'mythic', series: 'kagero', cut: 0.16 },
+  kagero_boots: { slot: 'boots',  icon: '💫', name: '陽炎の残影靴',   rarity: 'mythic', series: 'kagero', spd: 0.24 },
+  kagero_ring:  { slot: 'ring',   icon: '🪞', name: '陽炎の鏡環',     rarity: 'mythic', series: 'kagero', rate: 0.22 },
+  kagero_charm: { slot: 'amulet', icon: '🫧', name: '陽炎の泡珠',     rarity: 'mythic', series: 'kagero', summon: 0.18 },
 };
 
 // アイテム効果の日本語説明(装備画面・ガチャ結果・火力表で共用)
@@ -5938,7 +5941,7 @@ function renderEquipScreen() {
   renderEquipSeries();
   equipListEl.innerHTML = '';
   // 所持している全装備をレアリティの高い順 → スロット順で一覧する
-  const order = ['sclass', 'legendary', 'epic', 'rare', 'common'];
+  const order = ['mythic', 'legendary', 'epic', 'rare', 'common'];
   const slotOrder = Object.keys(EQUIP_SLOTS);
   const owned = Object.keys(EQUIP_ITEMS)
     .filter((id) => equipSave.items[id])
@@ -5958,7 +5961,7 @@ function renderEquipScreen() {
     tileRarityStyle(tile, item.rarity);
     tile.innerHTML = item.icon +
       '<span class="t-slot">' + EQUIP_SLOTS[item.slot].label + '</span>' +
-      (item.rarity === 'sclass' ? '<span class="t-s">S</span>' : '') +
+      (isSClassItem(item) ? '<span class="t-s">S</span>' : '') +
       '<span class="t-lv">Lv' + st.lv + '</span>' +
       (equipped ? '<span class="t-eq">装備中</span>' : '');
     tile.addEventListener('click', () => openEquipDetail(id));
@@ -6011,7 +6014,7 @@ function openEquipDetail(id) {
     '<div class="ed-sub"><span class="e-slot-chip">' + EQUIP_SLOTS[item.slot].label + '</span>' + seriesChip +
       '<span class="ed-rarity" style="color:' + c + '">' + CONFIG.level.rarity[item.rarity].label + '</span></div>' +
     '<div class="ed-top"><div class="eq-tile ed-tile">' + item.icon +
-      (item.rarity === 'sclass' ? '<span class="t-s">S</span>' : '') + '</div>' +
+      (isSClassItem(item) ? '<span class="t-s">S</span>' : '') + '</div>' +
       '<div class="ed-info"><span class="ed-main">' + itemDesc(id, st.lv) + '</span><br>' +
       'Lv ' + st.lv + ' / ' + itemLvCap(id) + '<br>強化素材 ' + st.mat + ' 個</div></div>' +
     '<div class="ed-sec">品質スキル</div>' + quality + series +
