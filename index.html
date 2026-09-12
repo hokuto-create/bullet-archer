@@ -2520,49 +2520,34 @@ const EQUIP_SERIES = {
 // **自分のレア度以下の段が全部**乗る(高レアほど効果行が増える。アーチャー伝説2の
 // 品質スキル方式)。同部位ならレア度が上のアイテムが必ず下位互換を包含するので、
 // 系統の「通常⊂S級」の関係もそのまま保たれる。値は強化Lvでは伸びない固定値で、
-// 効果キーはアイテム・系統ボーナスと同じ。段を増やすときはここに足す
+// 効果キーはアイテム・系統ボーナスと同じ。
+// **ステータス加算の段はコモン・レアの2段だけ**: エピック以上の段は置かない
+// (エピックからは部位固有効果 EQUIP_SERIES[].fx の梯子が乗る。素の数値の上積みで
+// 高レアを強くするのではなく、挙動が変わる効果で差を付ける方針)
 const EQUIP_QUALITY = {
   weapon: [
     { rarity: 'common',    atk: 0.02 },
     { rarity: 'rare',      rate: 0.03 },
-    { rarity: 'epic',      atk: 0.05 },
-    { rarity: 'legendary', graze: 0.1 },
-    { rarity: 'mythic',    atk: 0.10 },
   ],
   helmet: [
     { rarity: 'common',    hp: 5 },
     { rarity: 'rare',      hp: 8 },
-    { rarity: 'epic',      cut: 0.02 },
-    { rarity: 'legendary', hp: 15 },
-    { rarity: 'mythic',    hp: 25 },
   ],
   armor: [
     { rarity: 'common',    hp: 5 },
     { rarity: 'rare',      cut: 0.02 },
-    { rarity: 'epic',      hp: 10 },
-    { rarity: 'legendary', cut: 0.04 },
-    { rarity: 'mythic',    cut: 0.06, hp: 15 },
   ],
   boots: [
     { rarity: 'common',    spd: 0.02 },
     { rarity: 'rare',      spd: 0.03 },
-    { rarity: 'epic',      hp: 8 },
-    { rarity: 'legendary', spd: 0.05 },
-    { rarity: 'mythic',    spd: 0.08 },
   ],
   ring: [
     { rarity: 'common',    rate: 0.02 },
     { rarity: 'rare',      atk: 0.02 },
-    { rarity: 'epic',      rate: 0.04 },
-    { rarity: 'legendary', rate: 0.06 },
-    { rarity: 'mythic',    rate: 0.08, atk: 0.04 },
   ],
   amulet: [
     { rarity: 'common',    summon: 0.03 },
     { rarity: 'rare',      summon: 0.04 },
-    { rarity: 'epic',      graze: 0.1 },
-    { rarity: 'legendary', summon: 0.08 },
-    { rarity: 'mythic',    summon: 0.12, graze: 0.1 },
   ],
 };
 
